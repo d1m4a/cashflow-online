@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Денежный поток онлайн</title>
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="topbar panel">
+        <div class="brand">
+          <div class="logo-mark">CASHFLOW</div>
+          <span>ONLINE</span>
+        </div>
+        <nav class="main-nav" aria-label="Основная навигация">
+          <a href="#" class="active">Главная</a>
+          <a href="#">Комнаты</a>
+          <a href="#">Профиль</a>
+          <a href="#">Магазин</a>
+          <a href="#">Настройки</a>
+        </nav>
+        <div class="room-badge" id="roomBadge">Лобби</div>
+      </section>
+
+      <section class="panel setup-panel" id="setupPanel">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">1. Лобби</p>
+            <h1>Денежный поток онлайн</h1>
+          </div>
+          <p class="status-pill">MVP</p>
+        </div>
+        <div class="setup-grid">
+          <form id="createForm" class="setup-card">
+            <div class="setup-icon">P2P</div>
+            <h2>Создать комнату</h2>
+            <p>Создайте свою комнату и пригласите друзей.</p>
+            <label>
+              Имя
+              <input id="createName" name="name" maxlength="24" placeholder="Например, Дмитрий" required>
+            </label>
+            <button type="submit">Создать</button>
+          </form>
+
+          <form id="joinForm" class="setup-card">
+            <div class="setup-icon">D6</div>
+            <h2>Войти в комнату</h2>
+            <p>Найдите игру по коду комнаты.</p>
+            <label>
+              Код комнаты
+              <input id="joinCode" name="code" maxlength="5" placeholder="ABCDE" required>
+            </label>
+            <label>
+              Имя
+              <input id="joinName" name="name" maxlength="24" placeholder="Игрок" required>
+            </label>
+            <button type="submit">Присоединиться</button>
+          </form>
+
+          <article class="setup-card rules-card">
+            <div class="setup-icon">FAQ</div>
+            <h2>Правила MVP</h2>
+            <p>Побеждает игрок, чей пассивный доход покрыл расходы.</p>
+            <button type="button" disabled>Скоро</button>
+          </article>
+        </div>
+      </section>
+
+      <section class="game-layout hidden" id="gamePanel">
+        <aside class="panel sidebar glass-panel">
+          <div class="stack room-stack">
+            <div>
+              <p class="eyebrow">Комната</p>
+              <div class="room-code" id="roomCode">-----</div>
+            </div>
+            <button id="startButton" type="button">Начать игру</button>
+            <button id="turnButton" type="button">Бросить кубик</button>
+            <div class="message" id="message"></div>
+          </div>
+
+          <div class="players" id="players"></div>
+        </aside>
+
+        <section class="board-wrap">
+          <div class="panel board-header">
+            <div>
+              <p class="eyebrow">3. Игровое поле</p>
+              <h2>Крысиные бега</h2>
+            </div>
+            <div class="round-chip" id="roundChip">Раунд 1</div>
+          </div>
+          <div class="board" id="board"></div>
+        </section>
+
+        <aside class="panel details glass-panel">
+          <div id="dealPanel" class="deal hidden"></div>
+          <div>
+            <p class="eyebrow">6. Окно событий</p>
+            <h2>События</h2>
+            <ul class="log" id="log"></ul>
+          </div>
+        </aside>
+      </section>
+    </main>
+
+    <script src="/app.js"></script>
+  </body>
+</html>
