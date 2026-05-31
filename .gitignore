@@ -24,6 +24,7 @@ coverage/
 Thumbs.db
 .idea/
 .vscode/
+.gigaide/
 
 # Local temporary files
 *.tmp

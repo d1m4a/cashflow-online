@@ -23,7 +23,8 @@ const state = {
   roomCode: localStorage.getItem("cashflow.roomCode"),
   playerId: localStorage.getItem("cashflow.playerId"),
   game: null,
-  pollTimer: null
+  pollTimer: null,
+  eventSource: null
 };
 
 const createForm = document.querySelector("#createForm");
@@ -42,37 +43,46 @@ const dealPanel = document.querySelector("#dealPanel");
 
 createForm.addEventListener("submit", async (event) => {
   event.preventDefault();
-  const name = document.querySelector("#createName").value.trim();
-  const data = await api("/api/rooms", { method: "POST", body: { name } });
-  enterRoom(data.roomCode, data.playerId, data.game);
+  runAction(async () => {
+    const name = document.querySelector("#createName").value.trim();
+    const data = await api("/api/rooms", { method: "POST", body: { name } });
+    enterRoom(data.roomCode, data.playerId, data.game);
+  });
 });
 
 joinForm.addEventListener("submit", async (event) => {
   event.preventDefault();
-  const code = document.querySelector("#joinCode").value.trim().toUpperCase();
-  const name = document.querySelector("#joinName").value.trim();
-  const data = await api(`/api/rooms/${code}/join`, { method: "POST", body: { name } });
-  enterRoom(code, data.playerId, data.game);
+  runAction(async () => {
+    const code = document.querySelector("#joinCode").value.trim().toUpperCase();
+    const name = document.querySelector("#joinName").value.trim();
+    const data = await api(`/api/rooms/${code}/join`, { method: "POST", body: { name } });
+    enterRoom(code, data.playerId, data.game);
+  });
 });
 
 startButton.addEventListener("click", async () => {
-  const data = await api(`/api/rooms/${state.roomCode}/start`, { method: "POST" });
-  setGame(data.game);
+  runAction(async () => {
+    const data = await api(`/api/rooms/${state.roomCode}/start`, { method: "POST" });
+    setGame(data.game);
+  });
 });
 
 turnButton.addEventListener("click", async () => {
-  const data = await api(`/api/rooms/${state.roomCode}/turn`, {
-    method: "POST",
-    body: { playerId: state.playerId }
+  runAction(async () => {
+    const data = await api(`/api/rooms/${state.roomCode}/turn`, {
+      method: "POST",
+      body: { playerId: state.playerId }
+    });
+    setGame(data.game);
   });
-  setGame(data.game);
 });
 
 renderBoard();
 
 if (state.roomCode && state.playerId) {
-  refreshGame().catch(() => clearSession());
-  startPolling();
+  refreshGame()
+    .then(() => connectRealtime())
+    .catch(() => clearSession());
 }
 
 function enterRoom(code, playerId, game) {
@@ -81,7 +91,7 @@ function enterRoom(code, playerId, game) {
   localStorage.setItem("cashflow.roomCode", code);
   localStorage.setItem("cashflow.playerId", playerId);
   setGame(game);
-  startPolling();
+  connectRealtime();
 }
 
 function setGame(game) {
@@ -171,19 +181,23 @@ function renderDeal() {
   `;
 
   document.querySelector("#buyButton").addEventListener("click", async () => {
-    const data = await api(`/api/rooms/${state.roomCode}/buy`, {
-      method: "POST",
-      body: { playerId: state.playerId }
+    runAction(async () => {
+      const data = await api(`/api/rooms/${state.roomCode}/buy`, {
+        method: "POST",
+        body: { playerId: state.playerId }
+      });
+      setGame(data.game);
     });
-    setGame(data.game);
   });
 
   document.querySelector("#passButton").addEventListener("click", async () => {
-    const data = await api(`/api/rooms/${state.roomCode}/pass`, {
-      method: "POST",
-      body: { playerId: state.playerId }
+    runAction(async () => {
+      const data = await api(`/api/rooms/${state.roomCode}/pass`, {
+        method: "POST",
+        body: { playerId: state.playerId }
+      });
+      setGame(data.game);
     });
-    setGame(data.game);
   });
 }
 
@@ -214,11 +228,43 @@ async function refreshGame() {
   setGame(data.game);
 }
 
+function connectRealtime() {
+  stopPolling();
+  if (state.eventSource) {
+    state.eventSource.close();
+  }
+
+  if (typeof EventSource !== "function") {
+    startPolling();
+    return;
+  }
+
+  state.eventSource = new EventSource(`/api/rooms/${state.roomCode}/events`);
+  state.eventSource.addEventListener("state", (event) => {
+    const data = JSON.parse(event.data);
+    setGame(data.game);
+  });
+  state.eventSource.addEventListener("open", () => {
+    stopPolling();
+  });
+  state.eventSource.addEventListener("error", () => {
+    startPolling();
+    if (state.game) {
+      message.textContent = "Связь восстанавливается. Включён резервный режим обновления.";
+    }
+  });
+}
+
 function startPolling() {
   clearInterval(state.pollTimer);
   state.pollTimer = setInterval(() => {
     refreshGame().catch(() => {});
   }, 1500);
+}
+
+function stopPolling() {
+  clearInterval(state.pollTimer);
+  state.pollTimer = null;
 }
 
 async function api(url, options = {}) {
@@ -238,6 +284,14 @@ async function api(url, options = {}) {
   return data;
 }
 
+async function runAction(action) {
+  try {
+    await action();
+  } catch (error) {
+    showError(error.message || "Не удалось выполнить действие.");
+  }
+}
+
 function myPlayer() {
   return state.game?.players.find((player) => player.id === state.playerId);
 }
@@ -245,6 +299,21 @@ function myPlayer() {
 function clearSession() {
   localStorage.removeItem("cashflow.roomCode");
   localStorage.removeItem("cashflow.playerId");
+  if (state.eventSource) {
+    state.eventSource.close();
+  }
+  stopPolling();
+}
+
+function showError(text) {
+  if (state.game) {
+    message.textContent = text;
+    message.classList.add("error");
+    window.setTimeout(() => message.classList.remove("error"), 2400);
+    return;
+  }
+
+  roomBadge.textContent = text;
 }
 
 function money(value) {

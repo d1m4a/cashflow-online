@@ -16,6 +16,7 @@ const PORT = Number(process.env.PORT || 3000);
 const ROOT = path.resolve(__dirname, "..");
 const FRONTEND_DIR = path.join(ROOT, "frontend");
 const rooms = new Map();
+const roomStreams = new Map();
 
 const server = http.createServer(async (req, res) => {
   try {
@@ -65,6 +66,11 @@ async function handleApi(req, res, url) {
     return;
   }
 
+  if (req.method === "GET" && action === "events") {
+    subscribeToRoom(req, res, game);
+    return;
+  }
+
   if (req.method === "GET" && !action) {
     sendJson(res, 200, { game: serializeGame(game) });
     return;
@@ -80,31 +86,41 @@ async function handleApi(req, res, url) {
   try {
     if (action === "join") {
       const player = addPlayer(game, body.name);
-      sendJson(res, 200, { playerId: player.id, game: serializeGame(game) });
+      const payload = { playerId: player.id, game: serializeGame(game) };
+      sendJson(res, 200, payload);
+      broadcastRoom(game);
       return;
     }
 
     if (action === "start") {
       startGame(game);
-      sendJson(res, 200, { game: serializeGame(game) });
+      const payload = { game: serializeGame(game) };
+      sendJson(res, 200, payload);
+      broadcastRoom(game);
       return;
     }
 
     if (action === "turn") {
       takeTurn(game, body.playerId);
-      sendJson(res, 200, { game: serializeGame(game) });
+      const payload = { game: serializeGame(game) };
+      sendJson(res, 200, payload);
+      broadcastRoom(game);
       return;
     }
 
     if (action === "buy") {
       buyOpportunity(game, body.playerId);
-      sendJson(res, 200, { game: serializeGame(game) });
+      const payload = { game: serializeGame(game) };
+      sendJson(res, 200, payload);
+      broadcastRoom(game);
       return;
     }
 
     if (action === "pass") {
       passOpportunity(game, body.playerId);
-      sendJson(res, 200, { game: serializeGame(game) });
+      const payload = { game: serializeGame(game) };
+      sendJson(res, 200, payload);
+      broadcastRoom(game);
       return;
     }
 
@@ -112,6 +128,49 @@ async function handleApi(req, res, url) {
   } catch (error) {
     sendJson(res, 400, { error: error.message });
   }
+}
+
+function subscribeToRoom(req, res, game) {
+  res.writeHead(200, {
+    "Content-Type": "text/event-stream; charset=utf-8",
+    "Cache-Control": "no-cache, no-transform",
+    Connection: "keep-alive",
+    "X-Accel-Buffering": "no"
+  });
+  res.write("retry: 1500\n\n");
+
+  let streams = roomStreams.get(game.roomCode);
+  if (!streams) {
+    streams = new Set();
+    roomStreams.set(game.roomCode, streams);
+  }
+
+  streams.add(res);
+  writeEvent(res, "state", { game: serializeGame(game) });
+
+  req.on("close", () => {
+    streams.delete(res);
+    if (streams.size === 0) {
+      roomStreams.delete(game.roomCode);
+    }
+  });
+}
+
+function broadcastRoom(game) {
+  const streams = roomStreams.get(game.roomCode);
+  if (!streams) {
+    return;
+  }
+
+  const payload = { game: serializeGame(game) };
+  for (const stream of streams) {
+    writeEvent(stream, "state", payload);
+  }
+}
+
+function writeEvent(res, event, payload) {
+  res.write(`event: ${event}\n`);
+  res.write(`data: ${JSON.stringify(payload)}\n\n`);
 }
 
 function serveStatic(req, res, url) {

@@ -300,6 +300,11 @@ h2 {
   line-height: 1.35;
 }
 
+.message.error {
+  border-left-color: var(--red);
+  color: #ffc4c8;
+}
+
 .players {
   display: grid;
   gap: 10px;
