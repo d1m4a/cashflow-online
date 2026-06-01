@@ -19,6 +19,14 @@ const cells = [
   ["payday", "Зарплата"]
 ];
 
+const professions = [
+  { id: "engineer", title: "Инженер", salary: 4200, expenses: 2600, cash: 1800 },
+  { id: "teacher", title: "Учитель", salary: 2600, expenses: 1700, cash: 900 },
+  { id: "doctor", title: "Врач", salary: 5200, expenses: 3600, cash: 2200 },
+  { id: "driver", title: "Водитель", salary: 3100, expenses: 2100, cash: 1300 },
+  { id: "designer", title: "Дизайнер", salary: 3600, expenses: 2400, cash: 1600 }
+];
+
 const state = {
   roomCode: localStorage.getItem("cashflow.roomCode"),
   playerId: localStorage.getItem("cashflow.playerId"),
@@ -41,11 +49,14 @@ const board = document.querySelector("#board");
 const log = document.querySelector("#log");
 const dealPanel = document.querySelector("#dealPanel");
 
+renderProfessionOptions();
+
 createForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   runAction(async () => {
     const name = document.querySelector("#createName").value.trim();
-    const data = await api("/api/rooms", { method: "POST", body: { name } });
+    const professionId = document.querySelector("#createProfession").value;
+    const data = await api("/api/rooms", { method: "POST", body: { name, professionId } });
     enterRoom(data.roomCode, data.playerId, data.game);
   });
 });
@@ -55,7 +66,8 @@ joinForm.addEventListener("submit", async (event) => {
   runAction(async () => {
     const code = document.querySelector("#joinCode").value.trim().toUpperCase();
     const name = document.querySelector("#joinName").value.trim();
-    const data = await api(`/api/rooms/${code}/join`, { method: "POST", body: { name } });
+    const professionId = document.querySelector("#joinProfession").value;
+    const data = await api(`/api/rooms/${code}/join`, { method: "POST", body: { name, professionId } });
     enterRoom(code, data.playerId, data.game);
   });
 });
@@ -119,15 +131,32 @@ function renderPlayers() {
         <span>${escapeHtml(player.name)}</span>
         <span>${player.lastRoll ? `D6 ${player.lastRoll}` : ""}</span>
       </div>
+      <div class="profession">${escapeHtml(player.profession || "Профессия")}</div>
       <div class="stats">
         <span>Наличные<strong>${money(player.cash)}</strong></span>
-        <span>Пассивный<strong>${money(player.passiveIncome)}</strong></span>
+        <span>Доходы<strong>${money(player.totalIncome ?? player.salary + player.passiveIncome)}</strong></span>
         <span>Расходы<strong>${money(player.expenses)}</strong></span>
+        <span>Поток<strong>${money(player.monthlyCashflow ?? player.salary + player.passiveIncome - player.expenses)}</strong></span>
+        <span>Пассивный<strong>${money(player.passiveIncome)}</strong></span>
+        <span>Платежи<strong>${money(player.totalLiabilityPayment ?? 0)}</strong></span>
+        <span>Долги<strong>${money(player.liabilityBalance ?? 0)}</strong></span>
         <span>Активы<strong>${player.assets.length}</strong></span>
       </div>
     `;
     players.append(card);
   });
+}
+
+function renderProfessionOptions() {
+  const options = professions
+    .map((profession) => {
+      const cashflow = profession.salary - profession.expenses;
+      return `<option value="${profession.id}">${profession.title}: поток ${money(cashflow)}, кэш ${money(profession.cash)}</option>`;
+    })
+    .join("");
+
+  document.querySelector("#createProfession").innerHTML = options;
+  document.querySelector("#joinProfession").innerHTML = options;
 }
 
 function renderBoard() {

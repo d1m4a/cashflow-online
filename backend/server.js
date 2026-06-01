@@ -42,7 +42,7 @@ async function handleApi(req, res, url) {
   if (req.method === "POST" && url.pathname === "/api/rooms") {
     const body = await readJson(req);
     const code = uniqueRoomCode();
-    const game = createGame(code, body.name);
+    const game = createGame(code, body.name, body.professionId);
     rooms.set(code, game);
     sendJson(res, 201, {
       roomCode: code,
@@ -85,7 +85,7 @@ async function handleApi(req, res, url) {
 
   try {
     if (action === "join") {
-      const player = addPlayer(game, body.name);
+      const player = addPlayer(game, body.name, body.professionId);
       const payload = { playerId: player.id, game: serializeGame(game) };
       sendJson(res, 200, payload);
       broadcastRoom(game);

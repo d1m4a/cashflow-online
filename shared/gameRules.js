@@ -1,7 +1,59 @@
-const STARTING_CASH = 2000;
-const STARTING_SALARY = 3000;
-const STARTING_EXPENSES = 1800;
 const BOARD_SIZE = 18;
+
+const PROFESSIONS = [
+  {
+    id: "engineer",
+    title: "Инженер",
+    salary: 4200,
+    expenses: 2600,
+    cash: 1800,
+    liabilities: [
+      { title: "Ипотека", payment: 900, balance: 82000 },
+      { title: "Автокредит", payment: 320, balance: 12000 }
+    ]
+  },
+  {
+    id: "teacher",
+    title: "Учитель",
+    salary: 2600,
+    expenses: 1700,
+    cash: 900,
+    liabilities: [
+      { title: "Потребительский кредит", payment: 180, balance: 4200 }
+    ]
+  },
+  {
+    id: "doctor",
+    title: "Врач",
+    salary: 5200,
+    expenses: 3600,
+    cash: 2200,
+    liabilities: [
+      { title: "Ипотека", payment: 1200, balance: 110000 },
+      { title: "Образовательный кредит", payment: 420, balance: 26000 }
+    ]
+  },
+  {
+    id: "driver",
+    title: "Водитель",
+    salary: 3100,
+    expenses: 2100,
+    cash: 1300,
+    liabilities: [
+      { title: "Автокредит", payment: 450, balance: 16000 }
+    ]
+  },
+  {
+    id: "designer",
+    title: "Дизайнер",
+    salary: 3600,
+    expenses: 2400,
+    cash: 1600,
+    liabilities: [
+      { title: "Кредитная карта", payment: 220, balance: 5400 }
+    ]
+  }
+];
 
 const CELLS = [
   { type: "payday", label: "Зарплата" },
@@ -77,23 +129,27 @@ const MARKET_CARDS = [
   { title: "Налоговый возврат", amount: 500, text: "Государство неожиданно вернуло переплату." }
 ];
 
-function createPlayer(id, name) {
+function createPlayer(id, name, professionId) {
+  const profession = findProfession(professionId);
   return {
     id,
     name: String(name || "Игрок").slice(0, 24),
+    professionId: profession.id,
+    profession: profession.title,
     position: 0,
-    cash: STARTING_CASH,
-    salary: STARTING_SALARY,
-    expenses: STARTING_EXPENSES,
+    cash: profession.cash,
+    salary: profession.salary,
+    expenses: profession.expenses,
     passiveIncome: 0,
     assets: [],
+    liabilities: profession.liabilities.map((item) => ({ ...item })),
     skippedTurns: 0,
     lastRoll: null
   };
 }
 
-function createGame(roomCode, hostName) {
-  const host = createPlayer(makeId(), hostName || "Хост");
+function createGame(roomCode, hostName, professionId) {
+  const host = createPlayer(makeId(), hostName || "Хост", professionId);
   return {
     roomCode,
     status: "lobby",
@@ -106,14 +162,14 @@ function createGame(roomCode, hostName) {
   };
 }
 
-function addPlayer(game, name) {
+function addPlayer(game, name, professionId) {
   if (game.status !== "lobby") {
     throw new Error("Игра уже началась.");
   }
   if (game.players.length >= 4) {
     throw new Error("В MVP максимум 4 игрока.");
   }
-  const player = createPlayer(makeId(), name || `Игрок ${game.players.length + 1}`);
+  const player = createPlayer(makeId(), name || `Игрок ${game.players.length + 1}`, professionId);
   game.players.push(player);
   game.log.unshift(`${player.name} присоединился к комнате.`);
   touch(game);
@@ -203,7 +259,7 @@ function resolveCell(game, player, cell, roll) {
   let message = `${player.name} выбрасывает ${roll} и попадает на "${cell.label}".`;
 
   if (cell.type === "payday") {
-    const income = player.salary + player.passiveIncome - player.expenses;
+    const income = monthlyCashflow(player);
     player.cash += income;
     message += ` Денежный поток: ${money(income)}.`;
   }
@@ -235,7 +291,7 @@ function resolveCell(game, player, cell, roll) {
   }
 
   if (cell.type === "downsized") {
-    const loss = Math.max(0, player.salary - player.expenses);
+    const loss = Math.max(0, monthlyCashflow(player));
     player.cash -= loss;
     player.skippedTurns = 1;
     message += ` Сокращение: потеря ${money(loss)} и пропуск следующего хода.`;
@@ -264,8 +320,42 @@ function checkWinner(game, player) {
 function serializeGame(game) {
   return {
     ...game,
-    currentPlayerId: currentPlayer(game)?.id || null
+    currentPlayerId: currentPlayer(game)?.id || null,
+    professions: PROFESSIONS.map((profession) => ({
+      id: profession.id,
+      title: profession.title,
+      salary: profession.salary,
+      expenses: profession.expenses,
+      cash: profession.cash
+    })),
+    players: game.players.map((player) => ({
+      ...player,
+      totalIncome: totalIncome(player),
+      monthlyCashflow: monthlyCashflow(player),
+      totalLiabilityPayment: totalLiabilityPayment(player),
+      liabilityBalance: liabilityBalance(player)
+    }))
   };
+}
+
+function findProfession(professionId) {
+  return PROFESSIONS.find((profession) => profession.id === professionId) || pick(PROFESSIONS);
+}
+
+function totalIncome(player) {
+  return player.salary + player.passiveIncome;
+}
+
+function totalLiabilityPayment(player) {
+  return player.liabilities.reduce((sum, liability) => sum + liability.payment, 0);
+}
+
+function liabilityBalance(player) {
+  return player.liabilities.reduce((sum, liability) => sum + liability.balance, 0);
+}
+
+function monthlyCashflow(player) {
+  return totalIncome(player) - player.expenses;
 }
 
 function makeRoomCode() {
@@ -294,6 +384,7 @@ function touch(game) {
 
 module.exports = {
   CELLS,
+  PROFESSIONS,
   createGame,
   addPlayer,
   startGame,
