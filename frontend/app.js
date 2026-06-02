@@ -1,4 +1,5 @@
 let cells = [];
+let fastTrackCells = [];
 let professions = [];
 
 const state = {
@@ -36,7 +37,7 @@ createForm.addEventListener("submit", async (event) => {
     const name = document.querySelector("#createName").value.trim();
     const professionId = document.querySelector("#createProfession").value;
     const data = await api("/api/rooms", { method: "POST", body: { name, professionId } });
-    enterRoom(data.roomCode, data.playerId, data.game);
+    await enterRoom(data.roomCode, data.playerId, data.game);
   });
 });
 
@@ -47,14 +48,14 @@ joinForm.addEventListener("submit", async (event) => {
     const name = document.querySelector("#joinName").value.trim();
     const professionId = document.querySelector("#joinProfession").value;
     const data = await api(`/api/rooms/${code}/join`, { method: "POST", body: { name, professionId } });
-    enterRoom(code, data.playerId, data.game);
+    await enterRoom(code, data.playerId, data.game);
   });
 });
 
 startButton.addEventListener("click", async () => {
   runAction(async () => {
     const data = await api(`/api/rooms/${state.roomCode}/start`, { method: "POST" });
-    setGame(data.game);
+    await setGame(data.game);
   });
 });
 
@@ -64,7 +65,7 @@ turnButton.addEventListener("click", async () => {
       method: "POST",
       body: { playerId: state.playerId }
     });
-    setGame(data.game);
+    await setGame(data.game);
   });
 });
 
@@ -77,7 +78,7 @@ chatForm.addEventListener("submit", async (event) => {
       body: { playerId: state.playerId, text }
     });
     chatInput.value = "";
-    setGame(data.game);
+    await setGame(data.game);
   });
 });
 
@@ -100,19 +101,28 @@ async function init() {
 async function loadRules() {
   const rules = await api("/api/rules");
   cells = rules.cells.map((cell) => [cell.type, cell.label]);
+  fastTrackCells = (rules.fastTrackCells || []).map((cell) => [cell.type, cell.label]);
   professions = rules.professions;
 }
 
-function enterRoom(code, playerId, game) {
+async function ensureRulesLoaded() {
+  if (cells.length > 0 && fastTrackCells.length > 0 && professions.length > 0) {
+    return;
+  }
+  await loadRules();
+}
+
+async function enterRoom(code, playerId, game) {
   state.roomCode = code;
   state.playerId = playerId;
   localStorage.setItem("cashflow.roomCode", code);
   localStorage.setItem("cashflow.playerId", playerId);
-  setGame(game);
+  await setGame(game);
   connectRealtime();
 }
 
-function setGame(game) {
+async function setGame(game) {
+  await ensureRulesLoaded();
   state.game = game;
   setupPanel.classList.add("hidden");
   gamePanel.classList.remove("hidden");
@@ -140,7 +150,8 @@ function renderPlayers() {
         <span>${escapeHtml(player.name)}</span>
         <span>${player.lastRoll ? `D6 ${player.lastRoll}` : ""}</span>
       </div>
-      <div class="profession">${escapeHtml(player.profession || "Профессия")}</div>
+      <div class="profession">${escapeHtml(player.profession || "Профессия")} · ${player.track === "fast-track" ? "Fast Track" : "Крысиные бега"}</div>
+      ${player.track === "fast-track" ? `<div class="dream-line">Мечта: ${escapeHtml(player.dream?.title || "цель")}</div>` : ""}
       <div class="stats">
         <span>Наличные<strong>${money(player.cash)}</strong></span>
         <span>Доходы<strong>${money(player.totalIncome ?? player.salary + player.passiveIncome)}</strong></span>
@@ -150,6 +161,7 @@ function renderPlayers() {
         <span>Платежи<strong>${money(player.totalLiabilityPayment ?? 0)}</strong></span>
         <span>Долги<strong>${money(player.liabilityBalance ?? 0)}</strong></span>
         <span>Активы<strong>${player.assets.length}</strong></span>
+        ${player.track === "fast-track" ? `<span>Fast Track<strong>${money(player.fastTrackIncome ?? 0)}</strong></span>` : ""}
       </div>
     `;
     players.append(card);
@@ -173,12 +185,26 @@ function renderBoard() {
   cells.forEach(([type, label], index) => {
     const cell = document.createElement("div");
     cell.className = `cell ${type}`;
-    const tokens = state.game?.players.filter((player) => player.position === index) || [];
+    const tokens = state.game?.players.filter((player) => (player.track || "rat-race") === "rat-race" && player.position === index) || [];
     cell.innerHTML = `
       <div class="cell-number">${index + 1}</div>
       <div class="cell-label">${label}</div>
       <div class="tokens">
         ${tokens.map((player) => `<span class="token" title="${escapeHtml(player.name)}">${escapeHtml(initials(player.name))}</span>`).join("")}
+      </div>
+    `;
+    board.append(cell);
+  });
+
+  fastTrackCells.forEach(([type, label], index) => {
+    const cell = document.createElement("div");
+    cell.className = `cell fast-track-cell ${type}`;
+    const tokens = state.game?.players.filter((player) => player.track === "fast-track" && player.fastPosition === index) || [];
+    cell.innerHTML = `
+      <div class="cell-number">F${index + 1}</div>
+      <div class="cell-label">${label}</div>
+      <div class="tokens">
+        ${tokens.map((player) => `<span class="token fast-token" title="${escapeHtml(player.name)}">${escapeHtml(initials(player.name))}</span>`).join("")}
       </div>
     `;
     board.append(cell);
@@ -219,7 +245,7 @@ function renderDeal() {
           method: "POST",
           body: { playerId: state.playerId, kind: "opportunity-choice" }
         });
-        setGame(data.game);
+        await setGame(data.game);
       });
     });
     return;
@@ -257,7 +283,7 @@ function renderDeal() {
         method: "POST",
         body: { playerId: state.playerId, mode: "cash" }
       });
-      setGame(data.game);
+      await setGame(data.game);
     });
   });
 
@@ -267,7 +293,7 @@ function renderDeal() {
         method: "POST",
         body: { playerId: state.playerId, mode: "finance" }
       });
-      setGame(data.game);
+      await setGame(data.game);
     });
   });
 
@@ -277,7 +303,7 @@ function renderDeal() {
         method: "POST",
         body: { playerId: state.playerId }
       });
-      setGame(data.game);
+      await setGame(data.game);
     });
   });
 }
@@ -288,7 +314,7 @@ function chooseDealType(type) {
       method: "POST",
       body: { playerId: state.playerId, type }
     });
-    setGame(data.game);
+    await setGame(data.game);
   });
 }
 
@@ -322,7 +348,7 @@ function renderMarketOffer() {
         method: "POST",
         body: { playerId: state.playerId }
       });
-      setGame(data.game);
+      await setGame(data.game);
     });
   });
 
@@ -332,7 +358,7 @@ function renderMarketOffer() {
         method: "POST",
         body: { playerId: state.playerId }
       });
-      setGame(data.game);
+      await setGame(data.game);
     });
   });
 }
@@ -355,6 +381,17 @@ function renderReport() {
       </li>
     `).join("")
     : "<li>Долгов нет</li>";
+  const dream = me.dream
+    ? `
+      <div class="dream-box">
+        <p class="eyebrow">Fast Track</p>
+        <h3>${escapeHtml(me.dream.title)}</h3>
+        <p>${escapeHtml(me.dream.text || "")}</p>
+        <p>Стоимость: <strong>${money(me.dream.cost)}</strong></p>
+        <button id="buyDreamButton" class="mini-button" ${me.track !== "fast-track" || me.cash < me.dream.cost || state.game.status !== "playing" ? "disabled" : ""}>Купить мечту</button>
+      </div>
+    `
+    : "";
 
   reportPanel.innerHTML = `
     <p class="eyebrow">8. Финансы</p>
@@ -364,7 +401,10 @@ function renderReport() {
       <span>Пассивный доход<strong>${money(me.passiveIncome)}</strong></span>
       <span>Расходы<strong>${money(me.expenses)}</strong></span>
       <span>Денежный поток<strong>${money(me.monthlyCashflow)}</strong></span>
+      <span>Круг<strong>${me.track === "fast-track" ? "Fast Track" : "Rat Race"}</strong></span>
+      <span>Доход Fast Track<strong>${money(me.fastTrackIncome ?? 0)}</strong></span>
     </div>
+    ${dream}
     <div class="report-columns">
       <div>
         <h3>Активы</h3>
@@ -384,10 +424,23 @@ function renderReport() {
           method: "POST",
           body: { playerId: state.playerId, liabilityId: button.dataset.liability }
         });
-        setGame(data.game);
+        await setGame(data.game);
       });
     });
   });
+
+  const buyDreamButton = document.querySelector("#buyDreamButton");
+  if (buyDreamButton) {
+    buyDreamButton.addEventListener("click", async () => {
+      runAction(async () => {
+        const data = await api(`/api/rooms/${state.roomCode}/buy-dream`, {
+          method: "POST",
+          body: { playerId: state.playerId }
+        });
+        await setGame(data.game);
+      });
+    });
+  }
 }
 
 function renderChat() {
@@ -412,9 +465,9 @@ function updateControls() {
     message.textContent = "Поделись кодом комнаты и начинай игру, когда все готовы.";
   } else if (game.status === "finished") {
     const winner = game.players.find((player) => player.id === game.winnerId);
-    message.textContent = `${winner?.name || "Игрок"} победил: пассивный доход покрыл расходы.`;
+    message.textContent = `${winner?.name || "Игрок"} победил на Fast Track.`;
   } else if (isMyTurn) {
-    message.textContent = hasPendingDeal ? "Заверши текущее решение, затем ход перейдёт дальше." : "Твой ход.";
+    message.textContent = hasPendingDeal ? "Заверши текущее решение, затем ход перейдёт дальше." : me?.track === "fast-track" ? "Твой ход на Fast Track." : "Твой ход.";
   } else {
     const current = game.players.find((player) => player.id === game.currentPlayerId);
     message.textContent = `Ход игрока ${current?.name || "..."}.`;
@@ -423,7 +476,7 @@ function updateControls() {
 
 async function refreshGame() {
   const data = await api(`/api/rooms/${state.roomCode}`);
-  setGame(data.game);
+  await setGame(data.game);
 }
 
 function connectRealtime() {
@@ -440,7 +493,7 @@ function connectRealtime() {
   state.eventSource = new EventSource(`/api/rooms/${state.roomCode}/events`);
   state.eventSource.addEventListener("state", (event) => {
     const data = JSON.parse(event.data);
-    setGame(data.game);
+    setGame(data.game).catch((error) => showError(error.message || "Не удалось обновить игру."));
   });
   state.eventSource.addEventListener("open", () => {
     stopPolling();

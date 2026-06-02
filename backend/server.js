@@ -11,6 +11,7 @@ const {
   passOpportunity,
   passOpportunityChoice,
   repayLiability,
+  buyDream,
   acceptMarketOffer,
   declineMarketOffer,
   addChatMessage,
@@ -162,6 +163,14 @@ async function handleApi(req, res, url) {
       return;
     }
 
+    if (action === "buy-dream") {
+      buyDream(game, body.playerId);
+      const payload = { game: serializeGame(game) };
+      sendJson(res, 200, payload);
+      broadcastRoom(game);
+      return;
+    }
+
     if (action === "accept-market") {
       acceptMarketOffer(game, body.playerId);
       const payload = { game: serializeGame(game) };
@@ -258,7 +267,10 @@ function serveStatic(req, res, url) {
       ".json": "application/json; charset=utf-8"
     }[ext] || "application/octet-stream";
 
-    res.writeHead(200, { "Content-Type": contentType });
+    res.writeHead(200, {
+      "Content-Type": contentType,
+      "Cache-Control": "no-store"
+    });
     res.end(data);
   });
 }
@@ -297,12 +309,18 @@ function readJson(req) {
 }
 
 function sendJson(res, status, payload) {
-  res.writeHead(status, { "Content-Type": "application/json; charset=utf-8" });
+  res.writeHead(status, {
+    "Content-Type": "application/json; charset=utf-8",
+    "Cache-Control": "no-store"
+  });
   res.end(JSON.stringify(payload));
 }
 
 function sendText(res, status, text) {
-  res.writeHead(status, { "Content-Type": "text/plain; charset=utf-8" });
+  res.writeHead(status, {
+    "Content-Type": "text/plain; charset=utf-8",
+    "Cache-Control": "no-store"
+  });
   res.end(text);
 }
 

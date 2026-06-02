@@ -2,12 +2,14 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const {
   createGame,
+  addPlayer,
   startGame,
   drawOpportunity,
   buyOpportunity,
   passOpportunityChoice,
   acceptMarketOffer,
   repayLiability,
+  buyDream,
   serializeGame,
   serializeRules
 } = require("../shared/gameRules");
@@ -107,7 +109,7 @@ test("market sale removes the asset and linked liability payment", () => {
   assert.equal(player.pendingMarketOffer, undefined);
 });
 
-test("repaying a liability reduces expenses and can trigger victory", () => {
+test("repaying a liability can move the player to Fast Track", () => {
   const game = makeStartedGame("teacher");
   const player = game.players[0];
   const liability = player.liabilities[0];
@@ -117,8 +119,22 @@ test("repaying a liability reduces expenses and can trigger victory", () => {
   repayLiability(game, player.id, liability.id);
 
   assert.equal(player.liabilities.some((item) => item.id === liability.id), false);
+  assert.equal(player.track, "fast-track");
+  assert.equal(game.status, "playing");
+  assert.equal(game.winnerId, null);
+});
+
+test("buying a dream on Fast Track wins the game", () => {
+  const game = makeStartedGame("teacher");
+  const player = game.players[0];
+  player.track = "fast-track";
+  player.cash = player.dream.cost;
+
+  buyDream(game, player.id);
+
   assert.equal(game.status, "finished");
   assert.equal(game.winnerId, player.id);
+  assert.equal(player.cash, 0);
 });
 
 test("serialized game includes computed financial fields and public professions", () => {
@@ -131,13 +147,42 @@ test("serialized game includes computed financial fields and public professions"
   assert.equal(player.totalIncome, player.salary + player.passiveIncome);
   assert.equal(player.monthlyCashflow, player.totalIncome - player.expenses);
   assert.equal(player.liabilityBalance, player.liabilities.reduce((sum, item) => sum + item.balance, 0));
+  assert.equal(player.track, "rat-race");
+  assert.equal(typeof player.dream.title, "string");
 });
 
 test("serialized rules expose board cells and profession setup data", () => {
   const rules = serializeRules();
 
   assert.equal(rules.boardSize, rules.cells.length);
+  assert.ok(rules.fastTrackCells.length > 0);
+  assert.ok(rules.dreams.length > 0);
+  assert.equal(typeof rules.fastTrackIncomeGoal, "number");
   assert.ok(rules.cells.some((cell) => cell.type === "opportunity"));
   assert.ok(rules.professions.every((profession) => profession.liabilities));
   assert.ok(rules.professions.every((profession) => !("assets" in profession)));
+});
+
+test("serialized multiplayer state keeps rat-race and fast-track players visible together", () => {
+  const game = createGame("ROOM1", "Alice", "teacher");
+  const bob = addPlayer(game, "Bob", "driver");
+  startGame(game);
+
+  game.players[0].track = "fast-track";
+  game.players[0].fastPosition = 3;
+  bob.track = "rat-race";
+  bob.position = 5;
+
+  const state = serializeGame(game);
+  const rules = serializeRules();
+  const aliceState = state.players.find((player) => player.name === "Alice");
+  const bobState = state.players.find((player) => player.name === "Bob");
+
+  assert.equal(state.players.length, 2);
+  assert.equal(aliceState.track, "fast-track");
+  assert.equal(aliceState.fastPosition, 3);
+  assert.equal(bobState.track, "rat-race");
+  assert.equal(bobState.position, 5);
+  assert.ok(rules.cells.length > 0);
+  assert.ok(rules.fastTrackCells.length > 0);
 });

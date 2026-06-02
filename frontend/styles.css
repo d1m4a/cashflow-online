@@ -430,6 +430,28 @@ h2 {
   background: var(--green);
 }
 
+.cell.fast-track-cell {
+  border-color: rgba(240, 181, 76, 0.48);
+  background: linear-gradient(180deg, rgba(52, 39, 18, 0.94), rgba(18, 17, 14, 0.92));
+}
+
+.cell.fast-track-cell::before {
+  background: var(--gold);
+}
+
+.cell.fast-deal::before,
+.cell.dream::before {
+  background: var(--gold);
+}
+
+.cell.cashflow-day::before {
+  background: var(--green);
+}
+
+.cell.tax-audit::before {
+  background: var(--red);
+}
+
 .cell-number,
 .cell-label,
 .tokens {
@@ -482,6 +504,18 @@ h2 {
 
 .token:nth-child(4) {
   background: var(--gold);
+}
+
+.fast-token {
+  background: var(--gold);
+  color: #201302;
+}
+
+.dream-line {
+  color: var(--gold);
+  font-size: 12px;
+  font-weight: 800;
+  margin-top: 5px;
 }
 
 .deal {
@@ -557,6 +591,27 @@ h2 {
 .report-columns strong {
   display: block;
   color: var(--green);
+}
+
+.dream-box {
+  display: grid;
+  gap: 8px;
+  border: 1px solid rgba(240, 181, 76, 0.36);
+  border-radius: 6px;
+  background: rgba(55, 39, 14, 0.38);
+  padding: 10px;
+}
+
+.dream-box h3 {
+  margin: 0;
+  color: var(--gold);
+  font-size: 15px;
+  text-transform: uppercase;
+}
+
+.dream-box p {
+  color: var(--muted);
+  line-height: 1.35;
 }
 
 .report-columns {
