@@ -79,38 +79,75 @@ const CELLS = [
 const OPPORTUNITY_CARDS = [
   {
     id: "dividend-stock",
+    type: "small",
     title: "Дивидендные акции",
     text: "Покупка пакета акций приносит небольшой пассивный доход.",
     cost: 800,
+    downPayment: 800,
+    loan: 0,
+    payment: 0,
+    marketValue: 950,
     passiveIncome: 120
   },
   {
     id: "garage-rent",
+    type: "small",
     title: "Гараж в аренду",
     text: "Недорогой объект с устойчивым арендным потоком.",
     cost: 1200,
+    downPayment: 500,
+    loan: 700,
+    payment: 60,
+    marketValue: 1500,
     passiveIncome: 220
   },
   {
     id: "online-course",
+    type: "small",
     title: "Онлайн-курс",
     text: "Разовый запуск цифрового продукта.",
     cost: 600,
+    downPayment: 600,
+    loan: 0,
+    payment: 0,
+    marketValue: 700,
     passiveIncome: 90
   },
   {
     id: "small-business",
+    type: "large",
     title: "Малый бизнес",
     text: "Больше риска и выше регулярный денежный поток.",
     cost: 2200,
+    downPayment: 900,
+    loan: 1300,
+    payment: 140,
+    marketValue: 3100,
     passiveIncome: 430
   },
   {
     id: "apartment",
+    type: "large",
     title: "Квартира под сдачу",
     text: "Крупная сделка с хорошим ежемесячным доходом.",
     cost: 3500,
+    downPayment: 1200,
+    loan: 2300,
+    payment: 230,
+    marketValue: 4600,
     passiveIncome: 760
+  },
+  {
+    id: "car-wash",
+    type: "large",
+    title: "Автомойка",
+    text: "Операционный бизнес с кредитным плечом.",
+    cost: 5000,
+    downPayment: 1600,
+    loan: 3400,
+    payment: 360,
+    marketValue: 6400,
+    passiveIncome: 1050
   }
 ];
 
@@ -123,10 +160,12 @@ const EXPENSE_CARDS = [
 ];
 
 const MARKET_CARDS = [
-  { title: "Бонус на рынке", amount: 650, text: "Удачная продажа старого актива." },
-  { title: "Рост портфеля", amount: 400, text: "Инвестиции подорожали, часть прибыли зафиксирована." },
-  { title: "Падение рынка", amount: -350, text: "Часть свободных денег ушла на покрытие просадки." },
-  { title: "Налоговый возврат", amount: 500, text: "Государство неожиданно вернуло переплату." }
+  { kind: "cash", title: "Бонус на рынке", amount: 650, text: "Удачная продажа старого актива." },
+  { kind: "cash", title: "Рост портфеля", amount: 400, text: "Инвестиции подорожали, часть прибыли зафиксирована." },
+  { kind: "cash", title: "Падение рынка", amount: -350, text: "Часть свободных денег ушла на покрытие просадки." },
+  { kind: "cash", title: "Налоговый возврат", amount: 500, text: "Государство неожиданно вернуло переплату." },
+  { kind: "asset-sale", title: "Покупатель на актив", multiplier: 1.25, text: "На рынке появился покупатель с премией." },
+  { kind: "asset-sale", title: "Срочный выкуп", multiplier: 0.9, text: "Можно продать актив быстро, но дешевле рынка." }
 ];
 
 function createPlayer(id, name, professionId) {
@@ -142,7 +181,7 @@ function createPlayer(id, name, professionId) {
     expenses: profession.expenses,
     passiveIncome: 0,
     assets: [],
-    liabilities: profession.liabilities.map((item) => ({ ...item })),
+    liabilities: profession.liabilities.map((item) => ({ ...item, id: makeId() })),
     skippedTurns: 0,
     lastRoll: null
   };
@@ -157,6 +196,7 @@ function createGame(roomCode, hostName, professionId) {
     currentPlayerIndex: 0,
     winnerId: null,
     log: [`Комната ${roomCode} создана.`],
+    chat: [],
     createdAt: Date.now(),
     updatedAt: Date.now()
   };
@@ -210,35 +250,161 @@ function takeTurn(game, playerId) {
   const event = resolveCell(game, player, cell, roll);
   checkWinner(game, player);
 
-  if (!game.winnerId && !player.pendingOpportunity) {
+  if (!game.winnerId && !hasPendingDecision(player)) {
     advanceTurn(game);
   }
   touch(game);
   return event;
 }
 
-function buyOpportunity(game, playerId) {
+function drawOpportunity(game, playerId, type) {
+  const player = game.players.find((item) => item.id === playerId);
+  if (!player || !player.pendingOpportunityChoice) {
+    throw new Error("Нет выбора сделки.");
+  }
+  if (type !== "small" && type !== "large") {
+    throw new Error("Выбери малую или крупную сделку.");
+  }
+
+  const card = pick(OPPORTUNITY_CARDS.filter((item) => item.type === type));
+  player.pendingOpportunity = { ...card };
+  delete player.pendingOpportunityChoice;
+  game.log.unshift(`${player.name} выбирает ${type === "large" ? "крупную" : "малую"} сделку: "${card.title}".`);
+  touch(game);
+  return card;
+}
+
+function buyOpportunity(game, playerId, mode = "cash") {
   const player = game.players.find((item) => item.id === playerId);
   if (!player || !player.pendingOpportunity) {
     throw new Error("Нет доступной сделки.");
   }
   const card = player.pendingOpportunity;
-  if (player.cash < card.cost) {
+  const financed = mode === "finance" && card.loan > 0;
+  const cashRequired = financed ? card.downPayment : card.cost;
+  if (player.cash < cashRequired) {
     throw new Error("Недостаточно денег для сделки.");
   }
-  player.cash -= card.cost;
+  player.cash -= cashRequired;
   player.passiveIncome += card.passiveIncome;
+  const assetId = makeId();
   player.assets.push({
+    id: assetId,
     title: card.title,
+    type: card.type,
     cost: card.cost,
+    downPayment: cashRequired,
+    loan: financed ? card.loan : 0,
+    payment: financed ? card.payment : 0,
+    marketValue: card.marketValue,
     passiveIncome: card.passiveIncome
   });
+  if (financed) {
+    player.expenses += card.payment;
+    player.liabilities.push({
+      id: assetId,
+      title: `Кредит: ${card.title}`,
+      payment: card.payment,
+      balance: card.loan
+    });
+  }
   delete player.pendingOpportunity;
-  game.log.unshift(`${player.name} покупает "${card.title}" за ${money(card.cost)}.`);
+  const details = financed ? `с кредитом, взнос ${money(cashRequired)}` : `за ${money(card.cost)}`;
+  game.log.unshift(`${player.name} покупает "${card.title}" ${details}.`);
   checkWinner(game, player);
   if (!game.winnerId && currentPlayer(game)?.id === player.id) {
     advanceTurn(game);
   }
+  touch(game);
+}
+
+function repayLiability(game, playerId, liabilityId) {
+  const player = game.players.find((item) => item.id === playerId);
+  if (!player) {
+    throw new Error("Игрок не найден.");
+  }
+  const liabilityIndex = player.liabilities.findIndex((item) => item.id === liabilityId);
+  if (liabilityIndex < 0) {
+    throw new Error("Обязательство не найдено.");
+  }
+  const liability = player.liabilities[liabilityIndex];
+  if (player.cash < liability.balance) {
+    throw new Error("Недостаточно денег для закрытия долга.");
+  }
+  player.cash -= liability.balance;
+  player.expenses = Math.max(0, player.expenses - liability.payment);
+  player.liabilities.splice(liabilityIndex, 1);
+  const asset = player.assets.find((item) => item.id === liabilityId);
+  if (asset) {
+    asset.loan = 0;
+    asset.payment = 0;
+  }
+  game.log.unshift(`${player.name} закрывает "${liability.title}" за ${money(liability.balance)}.`);
+  checkWinner(game, player);
+  touch(game);
+}
+
+function acceptMarketOffer(game, playerId) {
+  const player = game.players.find((item) => item.id === playerId);
+  if (!player || !player.pendingMarketOffer) {
+    throw new Error("Нет рыночного предложения.");
+  }
+  const offer = player.pendingMarketOffer;
+  const assetIndex = player.assets.findIndex((item) => item.id === offer.assetId);
+  if (assetIndex < 0) {
+    delete player.pendingMarketOffer;
+    throw new Error("Актив уже недоступен.");
+  }
+  const asset = player.assets[assetIndex];
+  const liabilityIndex = player.liabilities.findIndex((item) => item.id === asset.id);
+  const debt = liabilityIndex >= 0 ? player.liabilities[liabilityIndex].balance : 0;
+  const payment = liabilityIndex >= 0 ? player.liabilities[liabilityIndex].payment : 0;
+  const proceeds = offer.price - debt;
+  player.cash += proceeds;
+  player.passiveIncome = Math.max(0, player.passiveIncome - asset.passiveIncome);
+  player.expenses = Math.max(0, player.expenses - payment);
+  player.assets.splice(assetIndex, 1);
+  if (liabilityIndex >= 0) {
+    player.liabilities.splice(liabilityIndex, 1);
+  }
+  delete player.pendingMarketOffer;
+  game.log.unshift(`${player.name} продаёт "${asset.title}" за ${money(offer.price)}. Чистый результат: ${money(proceeds)}.`);
+  if (currentPlayer(game)?.id === player.id) {
+    advanceTurn(game);
+  }
+  touch(game);
+}
+
+function declineMarketOffer(game, playerId) {
+  const player = game.players.find((item) => item.id === playerId);
+  if (!player || !player.pendingMarketOffer) {
+    throw new Error("Нет рыночного предложения.");
+  }
+  game.log.unshift(`${player.name} отклоняет предложение по "${player.pendingMarketOffer.assetTitle}".`);
+  delete player.pendingMarketOffer;
+  if (currentPlayer(game)?.id === player.id) {
+    advanceTurn(game);
+  }
+  touch(game);
+}
+
+function addChatMessage(game, playerId, text) {
+  const player = game.players.find((item) => item.id === playerId);
+  const message = String(text || "").trim().slice(0, 300);
+  if (!player) {
+    throw new Error("Игрок не найден.");
+  }
+  if (!message) {
+    throw new Error("Сообщение пустое.");
+  }
+  game.chat.push({
+    id: makeId(),
+    playerId,
+    playerName: player.name,
+    text: message,
+    createdAt: Date.now()
+  });
+  game.chat = game.chat.slice(-80);
   touch(game);
 }
 
@@ -255,6 +421,19 @@ function passOpportunity(game, playerId) {
   touch(game);
 }
 
+function passOpportunityChoice(game, playerId) {
+  const player = game.players.find((item) => item.id === playerId);
+  if (!player || !player.pendingOpportunityChoice) {
+    throw new Error("Нет выбора сделки для пропуска.");
+  }
+  game.log.unshift(`${player.name} пропускает возможность.`);
+  delete player.pendingOpportunityChoice;
+  if (currentPlayer(game)?.id === player.id) {
+    advanceTurn(game);
+  }
+  touch(game);
+}
+
 function resolveCell(game, player, cell, roll) {
   let message = `${player.name} выбрасывает ${roll} и попадает на "${cell.label}".`;
 
@@ -265,9 +444,8 @@ function resolveCell(game, player, cell, roll) {
   }
 
   if (cell.type === "opportunity") {
-    const card = pick(OPPORTUNITY_CARDS);
-    player.pendingOpportunity = { ...card };
-    message += ` Сделка: ${card.title}, цена ${money(card.cost)}, пассивный доход ${money(card.passiveIncome)}.`;
+    player.pendingOpportunityChoice = true;
+    message += " Игрок выбирает малую или крупную сделку.";
   }
 
   if (cell.type === "expense") {
@@ -278,9 +456,22 @@ function resolveCell(game, player, cell, roll) {
 
   if (cell.type === "market") {
     const card = pick(MARKET_CARDS);
-    player.cash += card.amount;
-    const signed = card.amount >= 0 ? `+${money(card.amount)}` : `-${money(Math.abs(card.amount))}`;
-    message += ` ${card.title}: ${signed}.`;
+    if (card.kind === "asset-sale" && player.assets.length > 0) {
+      const asset = pick(player.assets);
+      const price = Math.round(asset.marketValue * card.multiplier);
+      player.pendingMarketOffer = {
+        assetId: asset.id,
+        assetTitle: asset.title,
+        title: card.title,
+        price,
+        text: card.text
+      };
+      message += ` ${card.title}: предложение продать "${asset.title}" за ${money(price)}.`;
+    } else {
+      player.cash += card.amount;
+      const signed = card.amount >= 0 ? `+${money(card.amount)}` : `-${money(Math.abs(card.amount))}`;
+      message += ` ${card.title}: ${signed}.`;
+    }
   }
 
   if (cell.type === "charity") {
@@ -305,6 +496,10 @@ function currentPlayer(game) {
   return game.players[game.currentPlayerIndex] || null;
 }
 
+function hasPendingDecision(player) {
+  return Boolean(player.pendingOpportunity || player.pendingOpportunityChoice || player.pendingMarketOffer);
+}
+
 function advanceTurn(game) {
   game.currentPlayerIndex = (game.currentPlayerIndex + 1) % game.players.length;
 }
@@ -321,6 +516,7 @@ function serializeGame(game) {
   return {
     ...game,
     currentPlayerId: currentPlayer(game)?.id || null,
+    chat: game.chat.slice(-80),
     professions: PROFESSIONS.map((profession) => ({
       id: profession.id,
       title: profession.title,
@@ -334,6 +530,21 @@ function serializeGame(game) {
       monthlyCashflow: monthlyCashflow(player),
       totalLiabilityPayment: totalLiabilityPayment(player),
       liabilityBalance: liabilityBalance(player)
+    }))
+  };
+}
+
+function serializeRules() {
+  return {
+    boardSize: BOARD_SIZE,
+    cells: CELLS.map((cell) => ({ ...cell })),
+    professions: PROFESSIONS.map((profession) => ({
+      id: profession.id,
+      title: profession.title,
+      salary: profession.salary,
+      expenses: profession.expenses,
+      cash: profession.cash,
+      liabilities: profession.liabilities.map((liability) => ({ ...liability }))
     }))
   };
 }
@@ -389,8 +600,15 @@ module.exports = {
   addPlayer,
   startGame,
   takeTurn,
+  drawOpportunity,
   buyOpportunity,
   passOpportunity,
+  passOpportunityChoice,
+  repayLiability,
+  acceptMarketOffer,
+  declineMarketOffer,
+  addChatMessage,
   serializeGame,
+  serializeRules,
   makeRoomCode
 };

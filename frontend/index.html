@@ -103,10 +103,21 @@
 
         <aside class="panel details glass-panel">
           <div id="dealPanel" class="deal hidden"></div>
+          <div id="marketPanel" class="deal market-offer hidden"></div>
+          <div id="reportPanel" class="finance-report"></div>
           <div>
             <p class="eyebrow">6. Окно событий</p>
             <h2>События</h2>
             <ul class="log" id="log"></ul>
+          </div>
+          <div class="chat-panel">
+            <p class="eyebrow">9. Чат</p>
+            <h2>Чат игры</h2>
+            <ul class="chat-log" id="chatLog"></ul>
+            <form id="chatForm" class="chat-form">
+              <input id="chatInput" maxlength="300" placeholder="Введите сообщение...">
+              <button type="submit">Отправить</button>
+            </form>
           </div>
         </aside>
       </section>

@@ -509,6 +509,10 @@ h2 {
   gap: 8px;
 }
 
+.deal-actions button:last-child:nth-child(3) {
+  grid-column: 1 / -1;
+}
+
 .secondary {
   border-color: rgba(145, 160, 184, 0.24);
   background: linear-gradient(180deg, #263245 0%, #151d2b 100%);
@@ -522,6 +526,94 @@ h2 {
   padding: 0;
   overflow: auto;
   list-style: none;
+}
+
+.finance-report,
+.chat-panel {
+  display: grid;
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(5, 10, 20, 0.44);
+  padding: 14px;
+}
+
+.report-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.report-grid span,
+.report-columns li {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: rgba(12, 20, 34, 0.72);
+  color: var(--muted);
+  padding: 8px;
+}
+
+.report-grid strong,
+.report-columns strong {
+  display: block;
+  color: var(--green);
+}
+
+.report-columns {
+  display: grid;
+  gap: 12px;
+}
+
+.report-columns h3 {
+  color: var(--ink);
+  font-size: 13px;
+  margin: 0 0 8px;
+  text-transform: uppercase;
+}
+
+.report-columns ul,
+.chat-log {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.report-columns li {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.mini-button {
+  min-height: 30px;
+  padding: 0 10px;
+  font-size: 11px;
+}
+
+.chat-log {
+  max-height: 190px;
+  overflow: auto;
+}
+
+.chat-log li {
+  display: grid;
+  gap: 3px;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+  padding-bottom: 8px;
+}
+
+.chat-log strong {
+  color: var(--purple-2);
+}
+
+.chat-form {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
 }
 
 .log li {

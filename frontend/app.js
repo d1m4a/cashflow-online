@@ -1,31 +1,5 @@
-const cells = [
-  ["payday", "Зарплата"],
-  ["opportunity", "Возможность"],
-  ["expense", "Расход"],
-  ["market", "Рынок"],
-  ["opportunity", "Возможность"],
-  ["charity", "Благотворительность"],
-  ["payday", "Зарплата"],
-  ["expense", "Расход"],
-  ["opportunity", "Возможность"],
-  ["downsized", "Сокращение"],
-  ["market", "Рынок"],
-  ["expense", "Расход"],
-  ["opportunity", "Возможность"],
-  ["payday", "Зарплата"],
-  ["expense", "Расход"],
-  ["opportunity", "Возможность"],
-  ["market", "Рынок"],
-  ["payday", "Зарплата"]
-];
-
-const professions = [
-  { id: "engineer", title: "Инженер", salary: 4200, expenses: 2600, cash: 1800 },
-  { id: "teacher", title: "Учитель", salary: 2600, expenses: 1700, cash: 900 },
-  { id: "doctor", title: "Врач", salary: 5200, expenses: 3600, cash: 2200 },
-  { id: "driver", title: "Водитель", salary: 3100, expenses: 2100, cash: 1300 },
-  { id: "designer", title: "Дизайнер", salary: 3600, expenses: 2400, cash: 1600 }
-];
+let cells = [];
+let professions = [];
 
 const state = {
   roomCode: localStorage.getItem("cashflow.roomCode"),
@@ -48,8 +22,13 @@ const players = document.querySelector("#players");
 const board = document.querySelector("#board");
 const log = document.querySelector("#log");
 const dealPanel = document.querySelector("#dealPanel");
+const marketPanel = document.querySelector("#marketPanel");
+const reportPanel = document.querySelector("#reportPanel");
+const chatLog = document.querySelector("#chatLog");
+const chatForm = document.querySelector("#chatForm");
+const chatInput = document.querySelector("#chatInput");
 
-renderProfessionOptions();
+init();
 
 createForm.addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -89,12 +68,39 @@ turnButton.addEventListener("click", async () => {
   });
 });
 
-renderBoard();
+chatForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  runAction(async () => {
+    const text = chatInput.value.trim();
+    const data = await api(`/api/rooms/${state.roomCode}/chat`, {
+      method: "POST",
+      body: { playerId: state.playerId, text }
+    });
+    chatInput.value = "";
+    setGame(data.game);
+  });
+});
 
-if (state.roomCode && state.playerId) {
-  refreshGame()
-    .then(() => connectRealtime())
-    .catch(() => clearSession());
+async function init() {
+  try {
+    await loadRules();
+    renderProfessionOptions();
+    renderBoard();
+
+    if (state.roomCode && state.playerId) {
+      await refreshGame();
+      connectRealtime();
+    }
+  } catch (error) {
+    clearSession();
+    showError(error.message || "Не удалось загрузить игру.");
+  }
+}
+
+async function loadRules() {
+  const rules = await api("/api/rules");
+  cells = rules.cells.map((cell) => [cell.type, cell.label]);
+  professions = rules.professions;
 }
 
 function enterRoom(code, playerId, game) {
@@ -116,6 +122,9 @@ function setGame(game) {
   renderBoard();
   renderLog();
   renderDeal();
+  renderMarketOffer();
+  renderReport();
+  renderChat();
   updateControls();
 }
 
@@ -187,6 +196,35 @@ function renderLog() {
 
 function renderDeal() {
   const me = myPlayer();
+  if (me?.pendingOpportunityChoice) {
+    dealPanel.classList.remove("hidden");
+    dealPanel.innerHTML = `
+      <div>
+        <p class="eyebrow">Возможность</p>
+        <h2>Выбор сделки</h2>
+      </div>
+      <p>Выбери малую сделку с меньшим входом или крупную сделку с большим потенциалом и риском.</p>
+      <div class="deal-actions">
+        <button id="smallDealButton">Малая</button>
+        <button id="largeDealButton">Крупная</button>
+        <button id="skipDealChoiceButton" class="secondary">Пропустить</button>
+      </div>
+    `;
+
+    document.querySelector("#smallDealButton").addEventListener("click", () => chooseDealType("small"));
+    document.querySelector("#largeDealButton").addEventListener("click", () => chooseDealType("large"));
+    document.querySelector("#skipDealChoiceButton").addEventListener("click", async () => {
+      runAction(async () => {
+        const data = await api(`/api/rooms/${state.roomCode}/pass`, {
+          method: "POST",
+          body: { playerId: state.playerId, kind: "opportunity-choice" }
+        });
+        setGame(data.game);
+      });
+    });
+    return;
+  }
+
   if (!me?.pendingOpportunity) {
     dealPanel.classList.add("hidden");
     dealPanel.innerHTML = "";
@@ -201,19 +239,33 @@ function renderDeal() {
       <h2>${escapeHtml(deal.title)}</h2>
     </div>
     <p>${escapeHtml(deal.text)}</p>
+    <p>Тип: <strong>${deal.type === "large" ? "Крупная" : "Малая"} сделка</strong></p>
     <p>Цена: <strong>${money(deal.cost)}</strong></p>
+    <p>Взнос: <strong>${money(deal.downPayment ?? deal.cost)}</strong></p>
+    <p>Кредит: <strong>${money(deal.loan ?? 0)}</strong>, платёж <strong>${money(deal.payment ?? 0)}</strong></p>
     <p>Пассивный доход: <strong>${money(deal.passiveIncome)}</strong></p>
     <div class="deal-actions">
-      <button id="buyButton" ${me.cash < deal.cost ? "disabled" : ""}>Купить</button>
+      <button id="buyCashButton" ${me.cash < deal.cost ? "disabled" : ""}>За наличные</button>
+      <button id="buyFinanceButton" ${(deal.loan || 0) <= 0 || me.cash < (deal.downPayment ?? deal.cost) ? "disabled" : ""}>С кредитом</button>
       <button id="passButton" class="secondary">Пропустить</button>
     </div>
   `;
 
-  document.querySelector("#buyButton").addEventListener("click", async () => {
+  document.querySelector("#buyCashButton").addEventListener("click", async () => {
     runAction(async () => {
       const data = await api(`/api/rooms/${state.roomCode}/buy`, {
         method: "POST",
-        body: { playerId: state.playerId }
+        body: { playerId: state.playerId, mode: "cash" }
+      });
+      setGame(data.game);
+    });
+  });
+
+  document.querySelector("#buyFinanceButton").addEventListener("click", async () => {
+    runAction(async () => {
+      const data = await api(`/api/rooms/${state.roomCode}/buy`, {
+        method: "POST",
+        body: { playerId: state.playerId, mode: "finance" }
       });
       setGame(data.game);
     });
@@ -230,11 +282,128 @@ function renderDeal() {
   });
 }
 
+function chooseDealType(type) {
+  runAction(async () => {
+    const data = await api(`/api/rooms/${state.roomCode}/draw-opportunity`, {
+      method: "POST",
+      body: { playerId: state.playerId, type }
+    });
+    setGame(data.game);
+  });
+}
+
+function renderMarketOffer() {
+  const me = myPlayer();
+  if (!me?.pendingMarketOffer) {
+    marketPanel.classList.add("hidden");
+    marketPanel.innerHTML = "";
+    return;
+  }
+
+  const offer = me.pendingMarketOffer;
+  marketPanel.classList.remove("hidden");
+  marketPanel.innerHTML = `
+    <div>
+      <p class="eyebrow">Рынок</p>
+      <h2>${escapeHtml(offer.title)}</h2>
+    </div>
+    <p>${escapeHtml(offer.text)}</p>
+    <p>Актив: <strong>${escapeHtml(offer.assetTitle)}</strong></p>
+    <p>Цена продажи: <strong>${money(offer.price)}</strong></p>
+    <div class="deal-actions">
+      <button id="acceptMarketButton">Продать</button>
+      <button id="declineMarketButton" class="secondary">Оставить</button>
+    </div>
+  `;
+
+  document.querySelector("#acceptMarketButton").addEventListener("click", async () => {
+    runAction(async () => {
+      const data = await api(`/api/rooms/${state.roomCode}/accept-market`, {
+        method: "POST",
+        body: { playerId: state.playerId }
+      });
+      setGame(data.game);
+    });
+  });
+
+  document.querySelector("#declineMarketButton").addEventListener("click", async () => {
+    runAction(async () => {
+      const data = await api(`/api/rooms/${state.roomCode}/decline-market`, {
+        method: "POST",
+        body: { playerId: state.playerId }
+      });
+      setGame(data.game);
+    });
+  });
+}
+
+function renderReport() {
+  const me = myPlayer();
+  if (!me) {
+    reportPanel.innerHTML = "";
+    return;
+  }
+
+  const assets = me.assets.length
+    ? me.assets.map((asset) => `<li>${escapeHtml(asset.title)} <strong>${money(asset.passiveIncome)}</strong></li>`).join("")
+    : "<li>Активов пока нет</li>";
+  const liabilities = me.liabilities.length
+    ? me.liabilities.map((liability) => `
+      <li>
+        <span>${escapeHtml(liability.title)} <strong>${money(liability.balance)}</strong></span>
+        <button class="mini-button" data-liability="${escapeHtml(liability.id || "")}" ${me.cash < liability.balance || !liability.id ? "disabled" : ""}>Закрыть</button>
+      </li>
+    `).join("")
+    : "<li>Долгов нет</li>";
+
+  reportPanel.innerHTML = `
+    <p class="eyebrow">8. Финансы</p>
+    <h2>Отчёт игрока</h2>
+    <div class="report-grid">
+      <span>Зарплата<strong>${money(me.salary)}</strong></span>
+      <span>Пассивный доход<strong>${money(me.passiveIncome)}</strong></span>
+      <span>Расходы<strong>${money(me.expenses)}</strong></span>
+      <span>Денежный поток<strong>${money(me.monthlyCashflow)}</strong></span>
+    </div>
+    <div class="report-columns">
+      <div>
+        <h3>Активы</h3>
+        <ul>${assets}</ul>
+      </div>
+      <div>
+        <h3>Обязательства</h3>
+        <ul>${liabilities}</ul>
+      </div>
+    </div>
+  `;
+
+  reportPanel.querySelectorAll("[data-liability]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      runAction(async () => {
+        const data = await api(`/api/rooms/${state.roomCode}/repay-liability`, {
+          method: "POST",
+          body: { playerId: state.playerId, liabilityId: button.dataset.liability }
+        });
+        setGame(data.game);
+      });
+    });
+  });
+}
+
+function renderChat() {
+  chatLog.innerHTML = "";
+  (state.game.chat || []).slice(-30).forEach((item) => {
+    const li = document.createElement("li");
+    li.innerHTML = `<strong>${escapeHtml(item.playerName)}</strong><span>${escapeHtml(item.text)}</span>`;
+    chatLog.append(li);
+  });
+}
+
 function updateControls() {
   const game = state.game;
   const me = myPlayer();
   const isMyTurn = game.currentPlayerId === state.playerId;
-  const hasPendingDeal = Boolean(me?.pendingOpportunity);
+  const hasPendingDeal = Boolean(me?.pendingOpportunity || me?.pendingOpportunityChoice || me?.pendingMarketOffer);
 
   startButton.disabled = game.status !== "lobby";
   turnButton.disabled = game.status !== "playing" || !isMyTurn || hasPendingDeal;
@@ -245,7 +414,7 @@ function updateControls() {
     const winner = game.players.find((player) => player.id === game.winnerId);
     message.textContent = `${winner?.name || "Игрок"} победил: пассивный доход покрыл расходы.`;
   } else if (isMyTurn) {
-    message.textContent = hasPendingDeal ? "Реши, покупать ли сделку, затем ход перейдёт дальше." : "Твой ход.";
+    message.textContent = hasPendingDeal ? "Заверши текущее решение, затем ход перейдёт дальше." : "Твой ход.";
   } else {
     const current = game.players.find((player) => player.id === game.currentPlayerId);
     message.textContent = `Ход игрока ${current?.name || "..."}.`;

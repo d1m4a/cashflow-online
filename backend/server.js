@@ -6,9 +6,16 @@ const {
   addPlayer,
   startGame,
   takeTurn,
+  drawOpportunity,
   buyOpportunity,
   passOpportunity,
+  passOpportunityChoice,
+  repayLiability,
+  acceptMarketOffer,
+  declineMarketOffer,
+  addChatMessage,
   serializeGame,
+  serializeRules,
   makeRoomCode
 } = require("../shared/gameRules");
 
@@ -34,11 +41,22 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-server.listen(PORT, () => {
-  console.log(`Cashflow MVP is running at http://localhost:${PORT}`);
-});
+if (require.main === module) {
+  startServer();
+}
+
+function startServer(port = PORT) {
+  return server.listen(port, () => {
+    console.log(`Cashflow MVP is running at http://localhost:${port}`);
+  });
+}
 
 async function handleApi(req, res, url) {
+  if (req.method === "GET" && url.pathname === "/api/rules") {
+    sendJson(res, 200, serializeRules());
+    return;
+  }
+
   if (req.method === "POST" && url.pathname === "/api/rooms") {
     const body = await readJson(req);
     const code = uniqueRoomCode();
@@ -108,8 +126,16 @@ async function handleApi(req, res, url) {
       return;
     }
 
+    if (action === "draw-opportunity") {
+      drawOpportunity(game, body.playerId, body.type);
+      const payload = { game: serializeGame(game) };
+      sendJson(res, 200, payload);
+      broadcastRoom(game);
+      return;
+    }
+
     if (action === "buy") {
-      buyOpportunity(game, body.playerId);
+      buyOpportunity(game, body.playerId, body.mode);
       const payload = { game: serializeGame(game) };
       sendJson(res, 200, payload);
       broadcastRoom(game);
@@ -117,7 +143,43 @@ async function handleApi(req, res, url) {
     }
 
     if (action === "pass") {
-      passOpportunity(game, body.playerId);
+      if (body.kind === "opportunity-choice") {
+        passOpportunityChoice(game, body.playerId);
+      } else {
+        passOpportunity(game, body.playerId);
+      }
+      const payload = { game: serializeGame(game) };
+      sendJson(res, 200, payload);
+      broadcastRoom(game);
+      return;
+    }
+
+    if (action === "repay-liability") {
+      repayLiability(game, body.playerId, body.liabilityId);
+      const payload = { game: serializeGame(game) };
+      sendJson(res, 200, payload);
+      broadcastRoom(game);
+      return;
+    }
+
+    if (action === "accept-market") {
+      acceptMarketOffer(game, body.playerId);
+      const payload = { game: serializeGame(game) };
+      sendJson(res, 200, payload);
+      broadcastRoom(game);
+      return;
+    }
+
+    if (action === "decline-market") {
+      declineMarketOffer(game, body.playerId);
+      const payload = { game: serializeGame(game) };
+      sendJson(res, 200, payload);
+      broadcastRoom(game);
+      return;
+    }
+
+    if (action === "chat") {
+      addChatMessage(game, body.playerId, body.text);
       const payload = { game: serializeGame(game) };
       sendJson(res, 200, payload);
       broadcastRoom(game);
@@ -243,3 +305,8 @@ function sendText(res, status, text) {
   res.writeHead(status, { "Content-Type": "text/plain; charset=utf-8" });
   res.end(text);
 }
+
+module.exports = {
+  server,
+  startServer
+};

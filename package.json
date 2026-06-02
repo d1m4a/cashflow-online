@@ -5,7 +5,8 @@
   "description": "MVP online cashflow board game prototype.",
   "scripts": {
     "start": "node backend/server.js",
-    "dev": "node backend/server.js"
+    "dev": "node backend/server.js",
+    "test": "node --test"
   },
   "engines": {
     "node": ">=18"
