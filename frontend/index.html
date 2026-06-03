@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Мешок Деняк</title>
-    <link rel="stylesheet" href="/styles.css?v=meshok-denyak-1">
+    <link rel="stylesheet" href="/styles.css?v=meshok-denyak-2">
   </head>
   <body>
     <main class="app-shell">
@@ -14,16 +14,100 @@
           <span>ДЕНЯК</span>
         </div>
         <nav class="main-nav" aria-label="Основная навигация">
-          <a href="#" class="active">Главная</a>
-          <a href="#">Комнаты</a>
-          <a href="#">Профиль</a>
+          <a href="#" id="homeNav" class="active">Главная</a>
+          <a href="#" id="roomsNav">Комнаты</a>
+          <a href="#" id="profileNav">Профиль</a>
           <a href="#">Магазин</a>
           <a href="#">Настройки</a>
         </nav>
-        <div class="room-badge" id="roomBadge">Лобби</div>
+        <div class="top-actions">
+          <div class="room-badge" id="roomBadge">Лобби</div>
+          <button id="logoutButton" type="button" class="mini-button secondary hidden">Выйти</button>
+        </div>
       </section>
 
-      <section class="panel setup-panel" id="setupPanel">
+      <section class="panel setup-panel" id="authPanel">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Аккаунт</p>
+            <h1>Вход в игру</h1>
+          </div>
+          <p class="status-pill">Online</p>
+        </div>
+        <div class="setup-grid auth-grid">
+          <form id="loginForm" class="setup-card">
+            <div class="setup-icon">ID</div>
+            <h2>Войти</h2>
+            <label>
+              Email
+              <input id="loginEmail" name="email" type="email" maxlength="120" required>
+            </label>
+            <label>
+              Пароль
+              <input id="loginPassword" name="password" type="password" minlength="6" required>
+            </label>
+            <button type="submit">Войти</button>
+          </form>
+
+          <form id="registerForm" class="setup-card">
+            <div class="setup-icon">NEW</div>
+            <h2>Регистрация</h2>
+            <label>
+              Имя игрока
+              <input id="registerName" name="name" maxlength="24" placeholder="Игрок" required>
+            </label>
+            <label>
+              Email
+              <input id="registerEmail" name="email" type="email" maxlength="120" required>
+            </label>
+            <label>
+              Пароль
+              <input id="registerPassword" name="password" type="password" minlength="6" required>
+            </label>
+            <button type="submit">Создать аккаунт</button>
+          </form>
+
+          <article class="setup-card rules-card">
+            <div class="setup-icon">SAVE</div>
+            <h2>Профиль</h2>
+            <p>Аккаунт хранит имя игрока, комнаты, историю партий и личную статистику.</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="panel setup-panel hidden" id="profilePanel">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Профиль</p>
+            <h1 id="profileTitle">Игрок</h1>
+          </div>
+          <p class="status-pill" id="profileEmail">email</p>
+        </div>
+        <div class="profile-grid">
+          <form id="profileForm" class="profile-card">
+            <h2>Имя игрока</h2>
+            <label>
+              Отображаемое имя
+              <input id="profileName" maxlength="24" required>
+            </label>
+            <button type="submit">Сохранить</button>
+          </form>
+          <article class="profile-card">
+            <h2>Статистика</h2>
+            <div class="report-grid" id="profileStats"></div>
+          </article>
+          <article class="profile-card">
+            <h2>Сохранённые комнаты</h2>
+            <ul class="profile-list" id="profileRooms"></ul>
+          </article>
+          <article class="profile-card">
+            <h2>История игр</h2>
+            <ul class="profile-list" id="profileHistory"></ul>
+          </article>
+        </div>
+      </section>
+
+      <section class="panel setup-panel hidden" id="setupPanel">
         <div class="section-head">
           <div>
             <p class="eyebrow">1. Лобби</p>
@@ -83,7 +167,11 @@
               <p class="eyebrow">Комната</p>
               <div class="room-code" id="roomCode">-----</div>
             </div>
+            <input id="inviteLink" readonly aria-label="Ссылка-приглашение">
+            <button id="copyInviteButton" type="button" class="secondary">Ссылка-приглашение</button>
+            <button id="readyButton" type="button" class="secondary">Готов</button>
             <button id="startButton" type="button">Начать игру</button>
+            <button id="restartButton" type="button" class="secondary hidden">Новая игра</button>
             <button id="turnButton" type="button">Бросить кубик</button>
             <div class="message" id="message"></div>
           </div>
@@ -103,6 +191,7 @@
         </section>
 
         <aside class="panel details glass-panel">
+          <div id="resultPanel" class="result-panel hidden"></div>
           <div id="dealPanel" class="deal hidden"></div>
           <div id="marketPanel" class="deal market-offer hidden"></div>
           <div id="reportPanel" class="finance-report"></div>
@@ -124,6 +213,6 @@
       </section>
     </main>
 
-    <script src="/app.js?v=meshok-denyak-1"></script>
+    <script src="/app.js?v=meshok-denyak-2"></script>
   </body>
 </html>

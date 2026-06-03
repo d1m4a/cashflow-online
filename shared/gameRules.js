@@ -242,10 +242,11 @@ const PROJECT_MARKET_CARDS = [
   { title: "Раунд роста", multiplier: 1.35, text: "Стратегический партнёр хочет купить проект как готовую точку роста." }
 ];
 
-function createPlayer(id, name, professionId) {
+function createPlayer(id, name, professionId, accountId = null) {
   const profession = findProfession(professionId);
   return {
     id,
+    accountId,
     name: String(name || "Игрок").slice(0, 24),
     professionId: profession.id,
     profession: profession.title,
@@ -262,15 +263,17 @@ function createPlayer(id, name, professionId) {
     assets: [],
     liabilities: profession.liabilities.map((item) => ({ ...item, id: makeId() })),
     skippedTurns: 0,
-    lastRoll: null
+    lastRoll: null,
+    ready: false
   };
 }
 
-function createGame(roomCode, hostName, professionId) {
-  const host = createPlayer(makeId(), hostName || "Хост", professionId);
+function createGame(roomCode, hostName, professionId, hostAccountId = null) {
+  const host = createPlayer(makeId(), hostName || "Хост", professionId, hostAccountId);
   return {
     roomCode,
     status: "lobby",
+    hostId: host.id,
     players: [host],
     currentPlayerIndex: 0,
     winnerId: null,
@@ -281,26 +284,82 @@ function createGame(roomCode, hostName, professionId) {
   };
 }
 
-function addPlayer(game, name, professionId) {
+function addPlayer(game, name, professionId, accountId = null) {
   if (game.status !== "lobby") {
     throw new Error("Игра уже началась.");
   }
   if (game.players.length >= 4) {
     throw new Error("В MVP максимум 4 игрока.");
   }
-  const player = createPlayer(makeId(), name || `Игрок ${game.players.length + 1}`, professionId);
+  if (accountId && game.players.some((item) => item.accountId === accountId)) {
+    throw new Error("Этот аккаунт уже в комнате.");
+  }
+  const player = createPlayer(makeId(), name || `Игрок ${game.players.length + 1}`, professionId, accountId);
   game.players.push(player);
   game.log.unshift(`${player.name} присоединился к комнате.`);
   touch(game);
   return player;
 }
 
-function startGame(game) {
+function setPlayerReady(game, playerId, ready = true) {
+  if (game.status !== "lobby") {
+    throw new Error("Готовность можно менять только в лобби.");
+  }
+  const player = game.players.find((item) => item.id === playerId);
+  if (!player) {
+    throw new Error("Игрок не найден.");
+  }
+  player.ready = Boolean(ready);
+  game.log.unshift(`${player.name} ${player.ready ? "готов" : "снял готовность"}.`);
+  touch(game);
+}
+
+function startGame(game, hostId) {
+  assertHost(game, hostId);
   if (game.players.length < 1) {
     throw new Error("Нужен хотя бы один игрок.");
   }
+  const notReady = game.players.filter((player) => player.id !== game.hostId && !player.ready);
+  if (notReady.length > 0) {
+    throw new Error("Не все игроки готовы.");
+  }
   game.status = "playing";
+  game.players.forEach((player) => {
+    player.ready = false;
+  });
   game.log.unshift("Игра началась.");
+  touch(game);
+}
+
+function restartGame(game, hostId) {
+  assertHost(game, hostId);
+  const previousWinner = game.players.find((player) => player.id === game.winnerId);
+  const players = game.players.map((player) => resetPlayerForNewGame(player));
+  game.status = "lobby";
+  game.players = players;
+  game.currentPlayerIndex = 0;
+  game.winnerId = null;
+  game.log.unshift(previousWinner ? `Новая партия создана. Прошлый победитель: ${previousWinner.name}.` : "Новая партия создана.");
+  touch(game);
+}
+
+function kickPlayer(game, hostId, playerId) {
+  assertHost(game, hostId);
+  if (game.status !== "lobby") {
+    throw new Error("Кикать игроков можно только в лобби.");
+  }
+  if (playerId === game.hostId) {
+    throw new Error("Хоста нельзя кикнуть из собственной комнаты.");
+  }
+  const index = game.players.findIndex((player) => player.id === playerId);
+  if (index < 0) {
+    throw new Error("Игрок не найден.");
+  }
+  const [player] = game.players.splice(index, 1);
+  if (game.currentPlayerIndex >= game.players.length) {
+    game.currentPlayerIndex = 0;
+  }
+  game.log.unshift(`${player.name} удалён из комнаты.`);
   touch(game);
 }
 
@@ -792,6 +851,9 @@ function enterProjectLeague(game, player) {
 }
 
 function serializeGame(game) {
+  if (!game.hostId && game.players[0]) {
+    game.hostId = game.players[0].id;
+  }
   return {
     ...game,
     currentPlayerId: currentPlayer(game)?.id || null,
@@ -815,6 +877,21 @@ function serializeGame(game) {
       liabilityBalance: liabilityBalance(player)
     }))
   };
+}
+
+function resetPlayerForNewGame(player) {
+  const fresh = createPlayer(player.id, player.name, player.professionId, player.accountId || null);
+  fresh.ready = false;
+  return fresh;
+}
+
+function assertHost(game, playerId) {
+  if (!game.hostId && game.players[0]) {
+    game.hostId = game.players[0].id;
+  }
+  if (!playerId || playerId !== game.hostId) {
+    throw new Error("Это действие доступно только хосту.");
+  }
 }
 
 function serializeRules() {
@@ -898,7 +975,10 @@ module.exports = {
   PROFESSIONS,
   createGame,
   addPlayer,
+  setPlayerReady,
   startGame,
+  restartGame,
+  kickPlayer,
   takeTurn,
   drawOpportunity,
   buyOpportunity,

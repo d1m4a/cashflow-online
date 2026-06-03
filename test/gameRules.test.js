@@ -3,7 +3,10 @@ const assert = require("node:assert/strict");
 const {
   createGame,
   addPlayer,
+  setPlayerReady,
   startGame,
+  restartGame,
+  kickPlayer,
   drawOpportunity,
   buyOpportunity,
   passOpportunityChoice,
@@ -18,9 +21,46 @@ const {
 
 function makeStartedGame(professionId = "event-host") {
   const game = createGame("ABCDE", "Alice", professionId);
-  startGame(game);
+  startGame(game, game.hostId);
   return game;
 }
+
+test("only host starts when joined players are ready", () => {
+  const game = createGame("ABCDE", "Alice", "event-host");
+  const bob = addPlayer(game, "Bob", "repair-master");
+
+  assert.throws(() => startGame(game, bob.id), /только хосту/);
+  assert.throws(() => startGame(game, game.hostId), /Не все игроки готовы/);
+
+  setPlayerReady(game, bob.id, true);
+  startGame(game, game.hostId);
+
+  assert.equal(game.status, "playing");
+  assert.equal(game.players.every((player) => !player.ready), true);
+});
+
+test("host can kick lobby player and restart finished game in same room", () => {
+  const game = createGame("ABCDE", "Alice", "event-host");
+  const bob = addPlayer(game, "Bob", "repair-master");
+
+  kickPlayer(game, game.hostId, bob.id);
+
+  assert.equal(game.players.some((player) => player.id === bob.id), false);
+
+  startGame(game, game.hostId);
+  const host = game.players[0];
+  host.track = "project-league";
+  host.cash = host.grandGoal.cost;
+  buyGrandGoal(game, host.id);
+  restartGame(game, game.hostId);
+
+  assert.equal(game.roomCode, "ABCDE");
+  assert.equal(game.status, "lobby");
+  assert.equal(game.winnerId, null);
+  assert.equal(game.players[0].id, host.id);
+  assert.equal(game.players[0].name, "Alice");
+  assert.equal(game.players[0].track, "money-yard");
+});
 
 test("opportunity choice keeps the turn until the player chooses or skips", () => {
   const game = makeStartedGame();
@@ -290,7 +330,8 @@ test("starter professions keep distinct but playable money profiles", () => {
 test("serialized multiplayer state keeps money-yard and project-league players visible together", () => {
   const game = createGame("ROOM1", "Alice", "event-host");
   const bob = addPlayer(game, "Bob", "repair-master");
-  startGame(game);
+  setPlayerReady(game, bob.id, true);
+  startGame(game, game.hostId);
 
   game.players[0].track = "project-league";
   game.players[0].projectPosition = 3;
