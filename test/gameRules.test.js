@@ -9,12 +9,14 @@ const {
   passOpportunityChoice,
   acceptMarketOffer,
   repayLiability,
-  buyDream,
+  buyGrandGoal,
+  buyProjectDeal,
+  passProjectDeal,
   serializeGame,
   serializeRules
 } = require("../shared/gameRules");
 
-function makeStartedGame(professionId = "teacher") {
+function makeStartedGame(professionId = "event-host") {
   const game = createGame("ABCDE", "Alice", professionId);
   startGame(game);
   return game;
@@ -44,7 +46,7 @@ test("opportunity choice can be skipped and advances the turn", () => {
   assert.equal(game.currentPlayerIndex, 0);
 });
 
-test("financed purchase creates an asset, liability, expense payment and passive income", () => {
+test("financed purchase creates an asset, liability, expense payment and invest income", () => {
   const game = makeStartedGame();
   const player = game.players[0];
   player.cash = 1_000;
@@ -109,32 +111,136 @@ test("market sale removes the asset and linked liability payment", () => {
   assert.equal(player.pendingMarketOffer, undefined);
 });
 
-test("repaying a liability can move the player to Fast Track", () => {
-  const game = makeStartedGame("teacher");
+test("project league opens only after reputation and reserve goals are met", () => {
+  const game = makeStartedGame("event-host");
   const player = game.players[0];
   const liability = player.liabilities[0];
-  player.cash = liability.balance;
-  player.passiveIncome = player.expenses - liability.payment;
+  player.cash = liability.balance + player.expenses * 2;
+  player.reputation = 5;
 
   repayLiability(game, player.id, liability.id);
 
   assert.equal(player.liabilities.some((item) => item.id === liability.id), false);
-  assert.equal(player.track, "fast-track");
+  assert.equal(player.track, "project-league");
   assert.equal(game.status, "playing");
   assert.equal(game.winnerId, null);
 });
 
-test("buying a dream on Fast Track wins the game", () => {
-  const game = makeStartedGame("teacher");
+test("completing a grand goal in project league wins the game", () => {
+  const game = makeStartedGame("event-host");
   const player = game.players[0];
-  player.track = "fast-track";
-  player.cash = player.dream.cost;
+  player.track = "project-league";
+  player.cash = player.grandGoal.cost;
 
-  buyDream(game, player.id);
+  buyGrandGoal(game, player.id);
 
   assert.equal(game.status, "finished");
   assert.equal(game.winnerId, player.id);
   assert.equal(player.cash, 0);
+});
+
+test("project deal can be bought or skipped as an explicit project league decision", () => {
+  const game = makeStartedGame("event-host");
+  const player = game.players[0];
+  player.track = "project-league";
+  player.cash = 5000;
+  player.pendingProjectDeal = {
+    id: "test-project",
+    title: "Тестовый проект",
+    text: "Проверочная карточка проекта.",
+    cost: 4200,
+    marketValue: 5200,
+    upkeep: 170,
+    passiveIncome: 850
+  };
+  const expensesBefore = player.expenses;
+
+  buyProjectDeal(game, player.id);
+
+  assert.equal(player.cash, 800);
+  assert.equal(player.projectIncome, 850);
+  assert.equal(player.expenses, expensesBefore + 170);
+  assert.equal(player.assets.at(-1).type, "project-league");
+  assert.equal(player.assets.at(-1).payment, 170);
+  assert.equal(player.pendingProjectDeal, undefined);
+
+  player.pendingProjectDeal = {
+    id: "skip-project",
+    title: "Проект для пропуска",
+    text: "Проверочная карточка проекта.",
+    cost: 4200,
+    marketValue: 5200,
+    upkeep: 170,
+    passiveIncome: 850
+  };
+
+  passProjectDeal(game, player.id);
+
+  assert.equal(player.pendingProjectDeal, undefined);
+});
+
+test("project portfolio victory requires both income and enough project assets", () => {
+  const game = makeStartedGame("event-host");
+  const player = game.players[0];
+  player.track = "project-league";
+  player.projectIncome = 6200;
+  player.assets = [
+    { id: "p1", title: "Проект 1", type: "project-league", passiveIncome: 2100 },
+    { id: "p2", title: "Проект 2", type: "project-league", passiveIncome: 2100 }
+  ];
+  player.pendingProjectDeal = {
+    id: "p3",
+    title: "Проект 3",
+    text: "Финальный проект портфеля.",
+    cost: 1000,
+    marketValue: 1400,
+    upkeep: 25,
+    passiveIncome: 100
+  };
+  player.cash = 1000;
+
+  buyProjectDeal(game, player.id);
+
+  assert.equal(game.status, "finished");
+  assert.equal(game.winnerId, player.id);
+  assert.equal(serializeGame(game).players[0].projectAssetCount, 3);
+});
+
+test("selling a project asset lowers project income and maintenance", () => {
+  const game = makeStartedGame("event-host");
+  const player = game.players[0];
+  player.track = "project-league";
+  player.cash = 100;
+  player.projectIncome = 1250;
+  player.passiveIncome = 1250;
+  player.expenses += 260;
+  player.assets.push({
+    id: "project-asset",
+    title: "Проект на продажу",
+    type: "project-league",
+    cost: 6200,
+    downPayment: 6200,
+    loan: 0,
+    payment: 260,
+    marketValue: 7800,
+    passiveIncome: 1250
+  });
+  player.pendingMarketOffer = {
+    assetId: "project-asset",
+    assetTitle: "Проект на продажу",
+    title: "Покупатель проекта",
+    price: 8000,
+    text: "Проверочная продажа проекта."
+  };
+
+  acceptMarketOffer(game, player.id);
+  const state = serializeGame(game).players[0];
+
+  assert.equal(player.cash, 8100);
+  assert.equal(player.projectIncome, 0);
+  assert.equal(player.passiveIncome, 0);
+  assert.equal(state.projectMaintenanceCost, 0);
+  assert.equal(state.projectNetIncome, 0);
 });
 
 test("serialized game includes computed financial fields and public professions", () => {
@@ -145,32 +251,50 @@ test("serialized game includes computed financial fields and public professions"
   assert.equal(typeof state.currentPlayerId, "string");
   assert.ok(state.professions.length >= 5);
   assert.equal(player.totalIncome, player.salary + player.passiveIncome);
-  assert.equal(player.monthlyCashflow, player.totalIncome - player.expenses);
+  assert.equal(player.monthlySurplus, player.totalIncome - player.expenses);
   assert.equal(player.liabilityBalance, player.liabilities.reduce((sum, item) => sum + item.balance, 0));
-  assert.equal(player.track, "rat-race");
-  assert.equal(typeof player.dream.title, "string");
+  assert.equal(player.track, "money-yard");
+  assert.equal(typeof player.grandGoal.title, "string");
+  assert.equal(typeof player.projectReadiness.ready, "boolean");
 });
 
 test("serialized rules expose board cells and profession setup data", () => {
   const rules = serializeRules();
 
   assert.equal(rules.boardSize, rules.cells.length);
-  assert.ok(rules.fastTrackCells.length > 0);
-  assert.ok(rules.dreams.length > 0);
-  assert.equal(typeof rules.fastTrackIncomeGoal, "number");
+  assert.ok(rules.projectCells.length > 0);
+  assert.ok(rules.grandGoals.length > 0);
+  assert.equal(typeof rules.projectIncomeGoal, "number");
+  assert.equal(typeof rules.projectPortfolioGoal, "number");
+  assert.equal(typeof rules.reputationGoal, "number");
+  assert.equal(rules.reputationGoal, 5);
   assert.ok(rules.cells.some((cell) => cell.type === "opportunity"));
   assert.ok(rules.professions.every((profession) => profession.liabilities));
   assert.ok(rules.professions.every((profession) => !("assets" in profession)));
 });
 
-test("serialized multiplayer state keeps rat-race and fast-track players visible together", () => {
-  const game = createGame("ROOM1", "Alice", "teacher");
-  const bob = addPlayer(game, "Bob", "driver");
+test("starter professions keep distinct but playable money profiles", () => {
+  const rules = serializeRules();
+  const surpluses = rules.professions.map((profession) => profession.salary - profession.expenses);
+  const cashValues = rules.professions.map((profession) => profession.cash);
+  const lowestSurplus = Math.min(...surpluses);
+  const highestSurplus = Math.max(...surpluses);
+  const lowestCash = Math.min(...cashValues);
+
+  assert.ok(lowestSurplus >= 800);
+  assert.ok(highestSurplus - lowestSurplus >= 250);
+  assert.ok(lowestCash >= 1000);
+  assert.ok(rules.professions.every((profession) => profession.liabilities.length >= 1));
+});
+
+test("serialized multiplayer state keeps money-yard and project-league players visible together", () => {
+  const game = createGame("ROOM1", "Alice", "event-host");
+  const bob = addPlayer(game, "Bob", "repair-master");
   startGame(game);
 
-  game.players[0].track = "fast-track";
-  game.players[0].fastPosition = 3;
-  bob.track = "rat-race";
+  game.players[0].track = "project-league";
+  game.players[0].projectPosition = 3;
+  bob.track = "money-yard";
   bob.position = 5;
 
   const state = serializeGame(game);
@@ -179,10 +303,10 @@ test("serialized multiplayer state keeps rat-race and fast-track players visible
   const bobState = state.players.find((player) => player.name === "Bob");
 
   assert.equal(state.players.length, 2);
-  assert.equal(aliceState.track, "fast-track");
-  assert.equal(aliceState.fastPosition, 3);
-  assert.equal(bobState.track, "rat-race");
+  assert.equal(aliceState.track, "project-league");
+  assert.equal(aliceState.projectPosition, 3);
+  assert.equal(bobState.track, "money-yard");
   assert.equal(bobState.position, 5);
   assert.ok(rules.cells.length > 0);
-  assert.ok(rules.fastTrackCells.length > 0);
+  assert.ok(rules.projectCells.length > 0);
 });

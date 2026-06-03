@@ -11,7 +11,9 @@ const {
   passOpportunity,
   passOpportunityChoice,
   repayLiability,
-  buyDream,
+  buyGrandGoal,
+  buyProjectDeal,
+  passProjectDeal,
   acceptMarketOffer,
   declineMarketOffer,
   addChatMessage,
@@ -48,7 +50,7 @@ if (require.main === module) {
 
 function startServer(port = PORT) {
   return server.listen(port, () => {
-    console.log(`Cashflow MVP is running at http://localhost:${port}`);
+    console.log(`Мешок Деняк is running at http://localhost:${port}`);
   });
 }
 
@@ -163,8 +165,24 @@ async function handleApi(req, res, url) {
       return;
     }
 
-    if (action === "buy-dream") {
-      buyDream(game, body.playerId);
+    if (action === "complete-goal") {
+      buyGrandGoal(game, body.playerId);
+      const payload = { game: serializeGame(game) };
+      sendJson(res, 200, payload);
+      broadcastRoom(game);
+      return;
+    }
+
+    if (action === "buy-project") {
+      buyProjectDeal(game, body.playerId);
+      const payload = { game: serializeGame(game) };
+      sendJson(res, 200, payload);
+      broadcastRoom(game);
+      return;
+    }
+
+    if (action === "pass-project") {
+      passProjectDeal(game, body.playerId);
       const payload = { game: serializeGame(game) };
       sendJson(res, 200, payload);
       broadcastRoom(game);

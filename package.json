@@ -1,8 +1,8 @@
 {
-  "name": "cashflow-online-mvp",
+  "name": "meshok-denyak-online",
   "version": "0.1.0",
   "private": true,
-  "description": "MVP online cashflow board game prototype.",
+  "description": "Online board game prototype about capital, reputation, and project goals.",
   "scripts": {
     "start": "node backend/server.js",
     "dev": "node backend/server.js",

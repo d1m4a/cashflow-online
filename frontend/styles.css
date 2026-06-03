@@ -430,21 +430,21 @@ h2 {
   background: var(--green);
 }
 
-.cell.fast-track-cell {
+.cell.project-cell {
   border-color: rgba(240, 181, 76, 0.48);
   background: linear-gradient(180deg, rgba(52, 39, 18, 0.94), rgba(18, 17, 14, 0.92));
 }
 
-.cell.fast-track-cell::before {
+.cell.project-cell::before {
   background: var(--gold);
 }
 
 .cell.fast-deal::before,
-.cell.dream::before {
+.cell.goal::before {
   background: var(--gold);
 }
 
-.cell.cashflow-day::before {
+.cell.money-day::before {
   background: var(--green);
 }
 
@@ -506,12 +506,12 @@ h2 {
   background: var(--gold);
 }
 
-.fast-token {
+.project-token {
   background: var(--gold);
   color: #201302;
 }
 
-.dream-line {
+.goal-line {
   color: var(--gold);
   font-size: 12px;
   font-weight: 800;
@@ -585,6 +585,8 @@ h2 {
   background: rgba(12, 20, 34, 0.72);
   color: var(--muted);
   padding: 8px;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .report-grid strong,
@@ -593,7 +595,7 @@ h2 {
   color: var(--green);
 }
 
-.dream-box {
+.goal-box {
   display: grid;
   gap: 8px;
   border: 1px solid rgba(240, 181, 76, 0.36);
@@ -602,14 +604,14 @@ h2 {
   padding: 10px;
 }
 
-.dream-box h3 {
+.goal-box h3 {
   margin: 0;
   color: var(--gold);
   font-size: 15px;
   text-transform: uppercase;
 }
 
-.dream-box p {
+.goal-box p {
   color: var(--muted);
   line-height: 1.35;
 }

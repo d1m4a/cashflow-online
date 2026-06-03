@@ -1,58 +1,61 @@
 const BOARD_SIZE = 18;
-const FAST_TRACK_SIZE = 12;
-const FAST_TRACK_INCOME_GOAL = 5000;
+const PROJECT_BOARD_SIZE = 12;
+const PROJECT_INCOME_GOAL = 6200;
+const PROJECT_PORTFOLIO_GOAL = 3;
+const REPUTATION_GOAL = 5;
+const RESERVE_MONTHS_GOAL = 2;
 
 const PROFESSIONS = [
   {
-    id: "engineer",
-    title: "Инженер",
-    salary: 4200,
-    expenses: 2600,
-    cash: 1800,
+    id: "courier-curator",
+    title: "Куратор доставок",
+    salary: 3000,
+    expenses: 2140,
+    cash: 1050,
     liabilities: [
-      { title: "Ипотека", payment: 900, balance: 82000 },
-      { title: "Автокредит", payment: 320, balance: 12000 }
+      { title: "Рассрочка на скутер", payment: 260, balance: 6200 },
+      { title: "Долг за обучение", payment: 120, balance: 2800 }
     ]
   },
   {
-    id: "teacher",
-    title: "Учитель",
-    salary: 2600,
-    expenses: 1700,
-    cash: 900,
+    id: "event-host",
+    title: "Ведущий событий",
+    salary: 3700,
+    expenses: 2520,
+    cash: 1500,
     liabilities: [
-      { title: "Потребительский кредит", payment: 180, balance: 4200 }
+      { title: "Кредит на аппаратуру", payment: 260, balance: 8200 }
     ]
   },
   {
-    id: "doctor",
-    title: "Врач",
-    salary: 5200,
-    expenses: 3600,
-    cash: 2200,
+    id: "lab-technician",
+    title: "Техник лаборатории",
+    salary: 4550,
+    expenses: 3220,
+    cash: 2100,
     liabilities: [
-      { title: "Ипотека", payment: 1200, balance: 110000 },
-      { title: "Образовательный кредит", payment: 420, balance: 26000 }
+      { title: "Семейный заём", payment: 340, balance: 9800 },
+      { title: "Рассрочка на ноутбук", payment: 210, balance: 4700 }
     ]
   },
   {
-    id: "driver",
-    title: "Водитель",
-    salary: 3100,
-    expenses: 2100,
-    cash: 1300,
+    id: "repair-master",
+    title: "Мастер ремонта",
+    salary: 3850,
+    expenses: 2680,
+    cash: 1850,
     liabilities: [
-      { title: "Автокредит", payment: 450, balance: 16000 }
+      { title: "Кредит на инструменты", payment: 300, balance: 8800 }
     ]
   },
   {
-    id: "designer",
-    title: "Дизайнер",
-    salary: 3600,
-    expenses: 2400,
+    id: "content-editor",
+    title: "Редактор контента",
+    salary: 3350,
+    expenses: 2300,
     cash: 1600,
     liabilities: [
-      { title: "Кредитная карта", payment: 220, balance: 5400 }
+      { title: "Карта с лимитом", payment: 210, balance: 4800 }
     ]
   }
 ];
@@ -78,146 +81,165 @@ const CELLS = [
   { type: "payday", label: "Зарплата" }
 ];
 
-const FAST_TRACK_CELLS = [
-  { type: "cashflow-day", label: "Деньги" },
+const PROJECT_CELLS = [
+  { type: "money-day", label: "Деньги" },
   { type: "fast-deal", label: "Бизнес" },
   { type: "market", label: "Рынок" },
-  { type: "dream", label: "Мечта" },
-  { type: "cashflow-day", label: "Деньги" },
+  { type: "goal", label: "Цель" },
+  { type: "money-day", label: "Деньги" },
   { type: "charity", label: "Благотворительность" },
   { type: "fast-deal", label: "Бизнес" },
   { type: "tax-audit", label: "Налоги" },
-  { type: "dream", label: "Мечта" },
-  { type: "cashflow-day", label: "Деньги" },
+  { type: "goal", label: "Цель" },
+  { type: "money-day", label: "Деньги" },
   { type: "fast-deal", label: "Бизнес" },
   { type: "market", label: "Рынок" }
 ];
 
-const DREAMS = [
-  { id: "sailing", title: "Кругосветное путешествие", cost: 12000, text: "Своя яхта и год без расписания." },
-  { id: "charity-foundation", title: "Благотворительный фонд", cost: 10000, text: "Фонд, который финансирует важные проекты." },
-  { id: "private-island", title: "Остров для семьи", cost: 15000, text: "Место, куда хочется возвращаться." },
-  { id: "movie-studio", title: "Киностудия мечты", cost: 13000, text: "Снимать истории без компромиссов." },
-  { id: "space-camp", title: "Космический лагерь", cost: 11000, text: "Большая мечта для будущих инженеров." }
+const GRAND_GOALS = [
+  { id: "city-workshop", title: "Городская мастерская", cost: 15000, text: "Открыть общественное пространство, где люди учатся чинить вещи и запускать маленькие дела." },
+  { id: "family-trust", title: "Семейный фонд свободы", cost: 13500, text: "Создать резерв, который оплачивает год жизни семьи без обязательной работы." },
+  { id: "creative-yard", title: "Двор творческих проектов", cost: 17200, text: "Собрать площадку для концертов, лекций, ярмарок и локальных брендов." },
+  { id: "quiet-house", title: "Дом без будильника", cost: 16000, text: "Купить спокойное место, где доходы проектов оплачивают быт." },
+  { id: "learning-lab", title: "Лаборатория навыков", cost: 14200, text: "Запустить школу практических финансовых и ремесленных навыков." }
 ];
 
 const OPPORTUNITY_CARDS = [
   {
-    id: "dividend-stock",
+    id: "snack-shelf",
     type: "small",
-    title: "Дивидендные акции",
-    text: "Покупка пакета акций приносит небольшой пассивный доход.",
-    cost: 800,
-    downPayment: 800,
+    title: "Полка домашних снеков",
+    text: "Мини-витрина у знакомой кофейни: орехи, батончики и честная коробка.",
+    cost: 700,
+    downPayment: 700,
     loan: 0,
     payment: 0,
-    marketValue: 950,
-    passiveIncome: 120
-  },
-  {
-    id: "garage-rent",
-    type: "small",
-    title: "Гараж в аренду",
-    text: "Недорогой объект с устойчивым арендным потоком.",
-    cost: 1200,
-    downPayment: 500,
-    loan: 700,
-    payment: 60,
-    marketValue: 1500,
-    passiveIncome: 220
-  },
-  {
-    id: "online-course",
-    type: "small",
-    title: "Онлайн-курс",
-    text: "Разовый запуск цифрового продукта.",
-    cost: 600,
-    downPayment: 600,
-    loan: 0,
-    payment: 0,
-    marketValue: 700,
+    marketValue: 880,
     passiveIncome: 90
   },
   {
-    id: "small-business",
-    type: "large",
-    title: "Малый бизнес",
-    text: "Больше риска и выше регулярный денежный поток.",
-    cost: 2200,
-    downPayment: 900,
-    loan: 1300,
-    payment: 140,
-    marketValue: 3100,
-    passiveIncome: 430
+    id: "tool-rental",
+    type: "small",
+    title: "Ящик инструментов в аренду",
+    text: "Набор редких инструментов сдаётся соседям и маленьким бригадам.",
+    cost: 1250,
+    downPayment: 520,
+    loan: 730,
+    payment: 70,
+    marketValue: 1550,
+    passiveIncome: 185
   },
   {
-    id: "apartment",
-    type: "large",
-    title: "Квартира под сдачу",
-    text: "Крупная сделка с хорошим ежемесячным доходом.",
-    cost: 3500,
-    downPayment: 1200,
-    loan: 2300,
-    payment: 230,
-    marketValue: 4600,
-    passiveIncome: 760
+    id: "micro-newsletter",
+    type: "small",
+    title: "Платная рассылка района",
+    text: "Афиша, скидки и полезные контакты для жителей квартала.",
+    cost: 850,
+    downPayment: 850,
+    loan: 0,
+    payment: 0,
+    marketValue: 1050,
+    passiveIncome: 110
   },
   {
-    id: "car-wash",
+    id: "laundry-corner",
     type: "large",
-    title: "Автомойка",
-    text: "Операционный бизнес с кредитным плечом.",
-    cost: 5000,
-    downPayment: 1600,
-    loan: 3400,
-    payment: 360,
-    marketValue: 6400,
-    passiveIncome: 1050
+    title: "Прачечный уголок",
+    text: "Две машины самообслуживания в проходном месте.",
+    cost: 3000,
+    downPayment: 1150,
+    loan: 1850,
+    payment: 190,
+    marketValue: 3900,
+    passiveIncome: 440
+  },
+  {
+    id: "storage-cells",
+    type: "large",
+    title: "Кладовки для самозанятых",
+    text: "Маленькие боксы под хранение реквизита, товара и инструментов.",
+    cost: 4300,
+    downPayment: 1550,
+    loan: 2750,
+    payment: 290,
+    marketValue: 5600,
+    passiveIncome: 720
+  },
+  {
+    id: "mobile-stage",
+    type: "large",
+    title: "Мобильная сцена",
+    text: "Сборная сцена сдаётся на ярмарки, праздники и лекции.",
+    cost: 5900,
+    downPayment: 2050,
+    loan: 3850,
+    payment: 430,
+    marketValue: 7600,
+    passiveIncome: 980
   }
 ];
 
 const EXPENSE_CARDS = [
-  { title: "Ремонт машины", amount: 450 },
-  { title: "Семейный праздник", amount: 300 },
-  { title: "Медицинский счёт", amount: 550 },
-  { title: "Обновление техники", amount: 700 },
-  { title: "Неожиданный штраф", amount: 250 }
+  { title: "Затопило кухню", amount: 460 },
+  { title: "Срочный подарок родственнику", amount: 320 },
+  { title: "Платный приём специалиста", amount: 560 },
+  { title: "Сломался рабочий ноутбук", amount: 760 },
+  { title: "Штраф за забытый документ", amount: 260 },
+  { title: "Внезапная поездка домой", amount: 420 }
 ];
 
 const MARKET_CARDS = [
-  { kind: "cash", title: "Бонус на рынке", amount: 650, text: "Удачная продажа старого актива." },
-  { kind: "cash", title: "Рост портфеля", amount: 400, text: "Инвестиции подорожали, часть прибыли зафиксирована." },
-  { kind: "cash", title: "Падение рынка", amount: -350, text: "Часть свободных денег ушла на покрытие просадки." },
-  { kind: "cash", title: "Налоговый возврат", amount: 500, text: "Государство неожиданно вернуло переплату." },
-  { kind: "asset-sale", title: "Покупатель на актив", multiplier: 1.25, text: "На рынке появился покупатель с премией." },
-  { kind: "asset-sale", title: "Срочный выкуп", multiplier: 0.9, text: "Можно продать актив быстро, но дешевле рынка." }
+  { kind: "cash", title: "Городской грант", amount: 560, text: "Вашу инициативу заметили и компенсировали часть затрат." },
+  { kind: "cash", title: "Сезонный всплеск", amount: 420, text: "Локальный спрос вырос, свободные деньги прибавились." },
+  { kind: "cash", title: "Просадка спроса", amount: -420, text: "Неделя вышла слабой, пришлось покрыть разрыв." },
+  { kind: "cash", title: "Возврат переплаты", amount: 430, text: "Бухгалтерия нашла ошибку в вашу пользу." },
+  { kind: "asset-sale", title: "Охотник за нишами", multiplier: 1.18, text: "Покупатель ищет именно такой актив." },
+  { kind: "asset-sale", title: "Быстрая ликвидность", multiplier: 0.88, text: "Можно выйти из актива быстро, но с дисконтом." }
 ];
 
-const FAST_TRACK_DEALS = [
+const PROJECT_DEALS = [
   {
-    title: "Франшиза кофеен",
-    text: "Сеть точек с понятной операционной моделью.",
-    cost: 3000,
-    passiveIncome: 900
+    id: "smart-lockers",
+    title: "Сеть умных шкафчиков",
+    text: "Пункты выдачи для локальных мастеров и онлайн-продавцов.",
+    cost: 4200,
+    marketValue: 5200,
+    upkeep: 170,
+    passiveIncome: 850
   },
   {
-    title: "Мини-отель",
-    text: "Объект на большом круге с высоким потоком.",
-    cost: 4500,
-    passiveIncome: 1300
+    id: "popup-kitchen",
+    title: "Кухня для pop-up команд",
+    text: "Почасовая аренда кухни для маленьких гастро-проектов.",
+    cost: 6200,
+    marketValue: 7800,
+    upkeep: 260,
+    passiveIncome: 1250
   },
   {
-    title: "IT-сервис",
-    text: "Подписочная выручка и масштабируемый продукт.",
-    cost: 5500,
-    passiveIncome: 1700
+    id: "maker-ledger",
+    title: "Сервис учёта для мастеров",
+    text: "Подписка для самозанятых: заявки, склад, напоминания клиентам.",
+    cost: 7600,
+    marketValue: 9800,
+    upkeep: 320,
+    passiveIncome: 1550
   },
   {
-    title: "Парк развлечений",
-    text: "Крупный актив для Fast Track.",
-    cost: 7000,
-    passiveIncome: 2300
+    id: "skill-festival",
+    title: "Фестиваль полезных навыков",
+    text: "Ежемесячная площадка с билетами, партнёрами и маркетом.",
+    cost: 9800,
+    marketValue: 12400,
+    upkeep: 470,
+    passiveIncome: 2100
   }
+];
+
+const PROJECT_MARKET_CARDS = [
+  { title: "Партнёрская витрина", multiplier: 1.22, text: "Покупатель готов заплатить за проект с работающей аудиторией." },
+  { title: "Смена формата", multiplier: 0.92, text: "Проект можно продать быстро, но рынок просит скидку за переупаковку." },
+  { title: "Раунд роста", multiplier: 1.35, text: "Стратегический партнёр хочет купить проект как готовую точку роста." }
 ];
 
 function createPlayer(id, name, professionId) {
@@ -227,15 +249,16 @@ function createPlayer(id, name, professionId) {
     name: String(name || "Игрок").slice(0, 24),
     professionId: profession.id,
     profession: profession.title,
-    track: "rat-race",
+    track: "money-yard",
     position: 0,
-    fastPosition: 0,
-    dream: { ...pick(DREAMS) },
+    projectPosition: 0,
+    grandGoal: { ...pick(GRAND_GOALS) },
     cash: profession.cash,
     salary: profession.salary,
     expenses: profession.expenses,
     passiveIncome: 0,
-    fastTrackIncome: 0,
+    projectIncome: 0,
+    reputation: 0,
     assets: [],
     liabilities: profession.liabilities.map((item) => ({ ...item, id: makeId() })),
     skippedTurns: 0,
@@ -301,9 +324,9 @@ function takeTurn(game, playerId) {
 
   const roll = rollDie();
   player.lastRoll = roll;
-  const event = player.track === "fast-track"
-    ? takeFastTrackTurn(game, player, roll)
-    : takeRatRaceTurn(game, player, roll);
+  const event = player.track === "project-league"
+    ? takeProjectTurn(game, player, roll)
+    : takeMoneyYardTurn(game, player, roll);
 
   if (!game.winnerId && !hasPendingDecision(player)) {
     advanceTurn(game);
@@ -312,7 +335,7 @@ function takeTurn(game, playerId) {
   return event;
 }
 
-function takeRatRaceTurn(game, player, roll) {
+function takeMoneyYardTurn(game, player, roll) {
   player.position = (player.position + roll) % BOARD_SIZE;
   const cell = CELLS[player.position];
   const event = resolveCell(game, player, cell, roll);
@@ -320,10 +343,10 @@ function takeRatRaceTurn(game, player, roll) {
   return event;
 }
 
-function takeFastTrackTurn(game, player, roll) {
-  player.fastPosition = (player.fastPosition + roll) % FAST_TRACK_SIZE;
-  const cell = FAST_TRACK_CELLS[player.fastPosition];
-  return resolveFastTrackCell(game, player, cell, roll);
+function takeProjectTurn(game, player, roll) {
+  player.projectPosition = (player.projectPosition + roll) % PROJECT_BOARD_SIZE;
+  const cell = PROJECT_CELLS[player.projectPosition];
+  return resolveProjectCell(game, player, cell, roll);
 }
 
 function drawOpportunity(game, playerId, type) {
@@ -378,8 +401,9 @@ function buyOpportunity(game, playerId, mode = "cash") {
     });
   }
   delete player.pendingOpportunity;
+  player.reputation += card.type === "large" ? 2 : 1;
   const details = financed ? `с кредитом, взнос ${money(cashRequired)}` : `за ${money(card.cost)}`;
-  game.log.unshift(`${player.name} покупает "${card.title}" ${details}.`);
+  game.log.unshift(`${player.name} покупает "${card.title}" ${details} и повышает репутацию.`);
   checkProgress(game, player);
   if (!game.winnerId && currentPlayer(game)?.id === player.id) {
     advanceTurn(game);
@@ -413,22 +437,76 @@ function repayLiability(game, playerId, liabilityId) {
   touch(game);
 }
 
-function buyDream(game, playerId) {
+function buyGrandGoal(game, playerId) {
   const player = game.players.find((item) => item.id === playerId);
   if (!player) {
     throw new Error("Игрок не найден.");
   }
-  if (player.track !== "fast-track") {
-    throw new Error("Мечта доступна после выхода на Fast Track.");
+  if (player.track !== "project-league") {
+    throw new Error("Большая цель доступна в Лиге проектов.");
   }
-  if (player.cash < player.dream.cost) {
-    throw new Error("Недостаточно денег для покупки мечты.");
+  if (player.cash < player.grandGoal.cost) {
+    throw new Error("Недостаточно денег для большой цели.");
   }
 
-  player.cash -= player.dream.cost;
+  player.cash -= player.grandGoal.cost;
   game.status = "finished";
   game.winnerId = player.id;
-  game.log.unshift(`${player.name} покупает мечту "${player.dream.title}" и выигрывает игру.`);
+  game.log.unshift(`${player.name} закрывает большую цель "${player.grandGoal.title}" и выигрывает игру.`);
+  touch(game);
+}
+
+function buyProjectDeal(game, playerId) {
+  const player = game.players.find((item) => item.id === playerId);
+  if (!player || !player.pendingProjectDeal) {
+    throw new Error("Нет проектной возможности.");
+  }
+  if (player.track !== "project-league") {
+    throw new Error("Проекты доступны только в Лиге проектов.");
+  }
+
+  const deal = player.pendingProjectDeal;
+  if (player.cash < deal.cost) {
+    throw new Error("Недостаточно денег для проекта.");
+  }
+
+  player.cash -= deal.cost;
+  player.passiveIncome += deal.passiveIncome;
+  player.projectIncome += deal.passiveIncome;
+  player.expenses += deal.upkeep || 0;
+  player.reputation += 2;
+  player.assets.push({
+    id: makeId(),
+    title: deal.title,
+    type: "project-league",
+    cost: deal.cost,
+    downPayment: deal.cost,
+    loan: 0,
+    payment: deal.upkeep || 0,
+    marketValue: deal.marketValue,
+    passiveIncome: deal.passiveIncome
+  });
+  delete player.pendingProjectDeal;
+  const upkeep = deal.upkeep ? `, обслуживание ${money(deal.upkeep)}/мес` : "";
+  game.log.unshift(`${player.name} вкладывается в проект "${deal.title}" за ${money(deal.cost)}${upkeep}.`);
+  checkProgress(game, player);
+  if (!game.winnerId && currentPlayer(game)?.id === player.id) {
+    advanceTurn(game);
+  }
+  touch(game);
+}
+
+function passProjectDeal(game, playerId) {
+  const player = game.players.find((item) => item.id === playerId);
+  if (!player || !player.pendingProjectDeal) {
+    throw new Error("Нет проектной возможности для пропуска.");
+  }
+
+  game.log.unshift(`${player.name} пропускает проект "${player.pendingProjectDeal.title}".`);
+  delete player.pendingProjectDeal;
+  if (currentPlayer(game)?.id === player.id) {
+    advanceTurn(game);
+  }
   touch(game);
 }
 
@@ -450,6 +528,9 @@ function acceptMarketOffer(game, playerId) {
   const proceeds = offer.price - debt;
   player.cash += proceeds;
   player.passiveIncome = Math.max(0, player.passiveIncome - asset.passiveIncome);
+  if (asset.type === "project-league") {
+    player.projectIncome = Math.max(0, player.projectIncome - asset.passiveIncome);
+  }
   player.expenses = Math.max(0, player.expenses - payment);
   player.assets.splice(assetIndex, 1);
   if (liabilityIndex >= 0) {
@@ -526,9 +607,9 @@ function resolveCell(game, player, cell, roll) {
   let message = `${player.name} выбрасывает ${roll} и попадает на "${cell.label}".`;
 
   if (cell.type === "payday") {
-    const income = monthlyCashflow(player);
+    const income = monthlySurplus(player);
     player.cash += income;
-    message += ` Денежный поток: ${money(income)}.`;
+    message += ` Свободный остаток: ${money(income)}.`;
   }
 
   if (cell.type === "opportunity") {
@@ -566,11 +647,12 @@ function resolveCell(game, player, cell, roll) {
     const donation = Math.min(300, Math.max(0, player.cash));
     player.cash -= donation;
     player.passiveIncome += 40;
-    message += ` Пожертвование ${money(donation)} повышает репутационный доход на ${money(40)}.`;
+    player.reputation += 1;
+    message += ` Пожертвование ${money(donation)} повышает доход на ${money(40)} и репутацию.`;
   }
 
   if (cell.type === "downsized") {
-    const loss = Math.max(0, monthlyCashflow(player));
+    const loss = Math.max(0, monthlySurplus(player));
     player.cash -= loss;
     player.skippedTurns = 1;
     message += ` Сокращение: потеря ${money(loss)} и пропуск следующего хода.`;
@@ -580,46 +662,29 @@ function resolveCell(game, player, cell, roll) {
   return { kind: cell.type, player, cell, message };
 }
 
-function resolveFastTrackCell(game, player, cell, roll) {
-  let message = `${player.name} выбрасывает ${roll} на Fast Track и попадает на "${cell.label}".`;
+function resolveProjectCell(game, player, cell, roll) {
+  let message = `${player.name} выбрасывает ${roll} в Лиге проектов и попадает на "${cell.label}".`;
 
-  if (cell.type === "cashflow-day") {
-    const income = Math.max(monthlyCashflow(player), player.passiveIncome, 0);
+  if (cell.type === "money-day") {
+    const income = Math.max(monthlySurplus(player), projectNetIncome(player), 0);
     player.cash += income;
     message += ` Получен денежный поток: ${money(income)}.`;
   }
 
   if (cell.type === "fast-deal") {
-    const deal = pick(FAST_TRACK_DEALS);
-    if (player.cash >= deal.cost) {
-      player.cash -= deal.cost;
-      player.passiveIncome += deal.passiveIncome;
-      player.fastTrackIncome += deal.passiveIncome;
-      player.assets.push({
-        id: makeId(),
-        title: deal.title,
-        type: "fast-track",
-        cost: deal.cost,
-        downPayment: deal.cost,
-        loan: 0,
-        payment: 0,
-        marketValue: deal.cost,
-        passiveIncome: deal.passiveIncome
-      });
-      message += ` Куплен актив "${deal.title}" за ${money(deal.cost)}, поток +${money(deal.passiveIncome)}.`;
-    } else {
-      message += ` Сделка "${deal.title}" стоит ${money(deal.cost)}, денег пока недостаточно.`;
-    }
+    const deal = pick(PROJECT_DEALS);
+    player.pendingProjectDeal = { ...deal };
+    message += ` Проект: "${deal.title}", вход ${money(deal.cost)}, доход +${money(deal.passiveIncome)}, обслуживание ${money(deal.upkeep || 0)}.`;
   }
 
-  if (cell.type === "dream") {
-    if (player.cash >= player.dream.cost) {
-      player.cash -= player.dream.cost;
+  if (cell.type === "goal") {
+    if (player.cash >= player.grandGoal.cost) {
+      player.cash -= player.grandGoal.cost;
       game.status = "finished";
       game.winnerId = player.id;
-      message += ` ${player.name} покупает мечту "${player.dream.title}" за ${money(player.dream.cost)} и выигрывает.`;
+      message += ` ${player.name} закрывает большую цель "${player.grandGoal.title}" за ${money(player.grandGoal.cost)} и выигрывает.`;
     } else {
-      message += ` Мечта "${player.dream.title}" стоит ${money(player.dream.cost)}. Нужно накопить ещё ${money(player.dream.cost - player.cash)}.`;
+      message += ` Большая цель "${player.grandGoal.title}" стоит ${money(player.grandGoal.cost)}. Нужно накопить ещё ${money(player.grandGoal.cost - player.cash)}.`;
     }
   }
 
@@ -627,20 +692,37 @@ function resolveFastTrackCell(game, player, cell, roll) {
     const donation = Math.min(500, Math.max(0, player.cash));
     player.cash -= donation;
     player.passiveIncome += 100;
-    player.fastTrackIncome += 100;
-    message += ` Пожертвование ${money(donation)} повышает поток на ${money(100)}.`;
+    player.projectIncome += 100;
+    player.reputation += 1;
+    message += ` Пожертвование ${money(donation)} повышает поток на ${money(100)} и репутацию.`;
   }
 
   if (cell.type === "tax-audit") {
-    const tax = Math.min(1000, Math.max(0, player.cash));
+    const taxBase = 700 + projectAssetCount(player) * 180 + Math.round(player.projectIncome * 0.08);
+    const tax = Math.min(taxBase, Math.max(0, player.cash));
     player.cash -= tax;
     message += ` Налоговая проверка: -${money(tax)}.`;
   }
 
   if (cell.type === "market") {
-    const gain = 1500;
-    player.cash += gain;
-    message += ` Удачная рыночная сделка: +${money(gain)}.`;
+    const projectAssets = player.assets.filter((asset) => asset.type === "project-league");
+    if (projectAssets.length > 0) {
+      const asset = pick(projectAssets);
+      const card = pick(PROJECT_MARKET_CARDS);
+      const price = Math.round(asset.marketValue * card.multiplier);
+      player.pendingMarketOffer = {
+        assetId: asset.id,
+        assetTitle: asset.title,
+        title: card.title,
+        price,
+        text: card.text
+      };
+      message += ` ${card.title}: предложение продать "${asset.title}" за ${money(price)}.`;
+    } else {
+      const gain = 1200;
+      player.cash += gain;
+      message += ` Удачная рыночная сделка без портфеля: +${money(gain)}.`;
+    }
   }
 
   game.log.unshift(message);
@@ -653,7 +735,7 @@ function currentPlayer(game) {
 }
 
 function hasPendingDecision(player) {
-  return Boolean(player.pendingOpportunity || player.pendingOpportunityChoice || player.pendingMarketOffer);
+  return Boolean(player.pendingOpportunity || player.pendingOpportunityChoice || player.pendingMarketOffer || player.pendingProjectDeal);
 }
 
 function advanceTurn(game) {
@@ -665,25 +747,48 @@ function checkProgress(game, player) {
     return;
   }
 
-  if (player.track === "rat-race" && player.passiveIncome >= player.expenses) {
-    enterFastTrack(game, player);
+  if (player.track === "money-yard" && canEnterProjectLeague(player)) {
+    enterProjectLeague(game, player);
     return;
   }
 
-  if (player.track === "fast-track" && player.fastTrackIncome >= FAST_TRACK_INCOME_GOAL) {
+  if (player.track === "project-league" && hasWinningProjectPortfolio(player)) {
     game.status = "finished";
     game.winnerId = player.id;
-    game.log.unshift(`${player.name} выигрывает: доход Fast Track достиг ${money(FAST_TRACK_INCOME_GOAL)}.`);
+    game.log.unshift(`${player.name} выигрывает: портфель проектов стал устойчивым.`);
   }
 }
 
-function enterFastTrack(game, player) {
-  player.track = "fast-track";
-  player.fastPosition = 0;
+function canEnterProjectLeague(player) {
+  return player.reputation >= REPUTATION_GOAL && player.cash >= player.expenses * RESERVE_MONTHS_GOAL;
+}
+
+function projectAssetCount(player) {
+  return player.assets.filter((asset) => asset.type === "project-league").length;
+}
+
+function projectMaintenanceCost(player) {
+  return player.assets
+    .filter((asset) => asset.type === "project-league")
+    .reduce((sum, asset) => sum + (asset.payment || 0), 0);
+}
+
+function projectNetIncome(player) {
+  return Math.max(0, player.projectIncome - projectMaintenanceCost(player));
+}
+
+function hasWinningProjectPortfolio(player) {
+  return player.projectIncome >= PROJECT_INCOME_GOAL && projectAssetCount(player) >= PROJECT_PORTFOLIO_GOAL;
+}
+
+function enterProjectLeague(game, player) {
+  player.track = "project-league";
+  player.projectPosition = 0;
   delete player.pendingOpportunity;
   delete player.pendingOpportunityChoice;
   delete player.pendingMarketOffer;
-  game.log.unshift(`${player.name} выходит из крысиных бегов и переходит на Fast Track. Цель: "${player.dream.title}".`);
+  delete player.pendingProjectDeal;
+  game.log.unshift(`${player.name} переходит в Лигу проектов. Большая цель: "${player.grandGoal.title}".`);
 }
 
 function serializeGame(game) {
@@ -701,7 +806,11 @@ function serializeGame(game) {
     players: game.players.map((player) => ({
       ...player,
       totalIncome: totalIncome(player),
-      monthlyCashflow: monthlyCashflow(player),
+      monthlySurplus: monthlySurplus(player),
+      projectReadiness: projectReadiness(player),
+      projectAssetCount: projectAssetCount(player),
+      projectMaintenanceCost: projectMaintenanceCost(player),
+      projectNetIncome: projectNetIncome(player),
       totalLiabilityPayment: totalLiabilityPayment(player),
       liabilityBalance: liabilityBalance(player)
     }))
@@ -712,9 +821,12 @@ function serializeRules() {
   return {
     boardSize: BOARD_SIZE,
     cells: CELLS.map((cell) => ({ ...cell })),
-    fastTrackCells: FAST_TRACK_CELLS.map((cell) => ({ ...cell })),
-    fastTrackIncomeGoal: FAST_TRACK_INCOME_GOAL,
-    dreams: DREAMS.map((dream) => ({ ...dream })),
+    projectCells: PROJECT_CELLS.map((cell) => ({ ...cell })),
+    projectIncomeGoal: PROJECT_INCOME_GOAL,
+    projectPortfolioGoal: PROJECT_PORTFOLIO_GOAL,
+    reputationGoal: REPUTATION_GOAL,
+    reserveMonthsGoal: RESERVE_MONTHS_GOAL,
+    grandGoals: GRAND_GOALS.map((goal) => ({ ...goal })),
     professions: PROFESSIONS.map((profession) => ({
       id: profession.id,
       title: profession.title,
@@ -742,8 +854,19 @@ function liabilityBalance(player) {
   return player.liabilities.reduce((sum, liability) => sum + liability.balance, 0);
 }
 
-function monthlyCashflow(player) {
+function monthlySurplus(player) {
   return totalIncome(player) - player.expenses;
+}
+
+function projectReadiness(player) {
+  const reserveRequired = player.expenses * RESERVE_MONTHS_GOAL;
+  return {
+    reputation: player.reputation,
+    reputationRequired: REPUTATION_GOAL,
+    reserve: player.cash,
+    reserveRequired,
+    ready: player.track === "project-league" || canEnterProjectLeague(player)
+  };
 }
 
 function makeRoomCode() {
@@ -782,7 +905,9 @@ module.exports = {
   passOpportunity,
   passOpportunityChoice,
   repayLiability,
-  buyDream,
+  buyGrandGoal,
+  buyProjectDeal,
+  passProjectDeal,
   acceptMarketOffer,
   declineMarketOffer,
   addChatMessage,

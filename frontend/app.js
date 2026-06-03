@@ -1,10 +1,11 @@
 let cells = [];
-let fastTrackCells = [];
+let projectCells = [];
 let professions = [];
+let ruleSummary = {};
 
 const state = {
-  roomCode: localStorage.getItem("cashflow.roomCode"),
-  playerId: localStorage.getItem("cashflow.playerId"),
+  roomCode: localStorage.getItem("meshok.roomCode"),
+  playerId: localStorage.getItem("meshok.playerId"),
   game: null,
   pollTimer: null,
   eventSource: null
@@ -100,13 +101,14 @@ async function init() {
 
 async function loadRules() {
   const rules = await api("/api/rules");
+  ruleSummary = rules;
   cells = rules.cells.map((cell) => [cell.type, cell.label]);
-  fastTrackCells = (rules.fastTrackCells || []).map((cell) => [cell.type, cell.label]);
+  projectCells = rules.projectCells.map((cell) => [cell.type, cell.label]);
   professions = rules.professions;
 }
 
 async function ensureRulesLoaded() {
-  if (cells.length > 0 && fastTrackCells.length > 0 && professions.length > 0) {
+  if (cells.length > 0 && projectCells.length > 0 && professions.length > 0) {
     return;
   }
   await loadRules();
@@ -115,8 +117,8 @@ async function ensureRulesLoaded() {
 async function enterRoom(code, playerId, game) {
   state.roomCode = code;
   state.playerId = playerId;
-  localStorage.setItem("cashflow.roomCode", code);
-  localStorage.setItem("cashflow.playerId", playerId);
+  localStorage.setItem("meshok.roomCode", code);
+  localStorage.setItem("meshok.playerId", playerId);
   await setGame(game);
   connectRealtime();
 }
@@ -150,18 +152,19 @@ function renderPlayers() {
         <span>${escapeHtml(player.name)}</span>
         <span>${player.lastRoll ? `D6 ${player.lastRoll}` : ""}</span>
       </div>
-      <div class="profession">${escapeHtml(player.profession || "Профессия")} · ${player.track === "fast-track" ? "Fast Track" : "Крысиные бега"}</div>
-      ${player.track === "fast-track" ? `<div class="dream-line">Мечта: ${escapeHtml(player.dream?.title || "цель")}</div>` : ""}
+      <div class="profession">${escapeHtml(player.profession || "Профессия")} · ${player.track === "project-league" ? "Лига проектов" : "Денежный двор"}</div>
+      ${player.track === "project-league" ? `<div class="goal-line">Цель: ${escapeHtml(player.grandGoal?.title || "проект")}</div>` : ""}
       <div class="stats">
         <span>Наличные<strong>${money(player.cash)}</strong></span>
         <span>Доходы<strong>${money(player.totalIncome ?? player.salary + player.passiveIncome)}</strong></span>
         <span>Расходы<strong>${money(player.expenses)}</strong></span>
-        <span>Поток<strong>${money(player.monthlyCashflow ?? player.salary + player.passiveIncome - player.expenses)}</strong></span>
-        <span>Пассивный<strong>${money(player.passiveIncome)}</strong></span>
+        <span>Остаток<strong>${money(player.monthlySurplus ?? player.salary + player.passiveIncome - player.expenses)}</strong></span>
+        <span>Инвестдоход<strong>${money(player.passiveIncome)}</strong></span>
+        <span>Репутация<strong>${player.reputation ?? 0}</strong></span>
         <span>Платежи<strong>${money(player.totalLiabilityPayment ?? 0)}</strong></span>
         <span>Долги<strong>${money(player.liabilityBalance ?? 0)}</strong></span>
         <span>Активы<strong>${player.assets.length}</strong></span>
-        ${player.track === "fast-track" ? `<span>Fast Track<strong>${money(player.fastTrackIncome ?? 0)}</strong></span>` : ""}
+        ${player.track === "project-league" ? `<span>Проекты<strong>${money(player.projectIncome ?? 0)}</strong></span>` : ""}
       </div>
     `;
     players.append(card);
@@ -171,8 +174,8 @@ function renderPlayers() {
 function renderProfessionOptions() {
   const options = professions
     .map((profession) => {
-      const cashflow = profession.salary - profession.expenses;
-      return `<option value="${profession.id}">${profession.title}: поток ${money(cashflow)}, кэш ${money(profession.cash)}</option>`;
+      const surplus = profession.salary - profession.expenses;
+      return `<option value="${profession.id}">${profession.title}: остаток ${money(surplus)}, кэш ${money(profession.cash)}</option>`;
     })
     .join("");
 
@@ -185,7 +188,7 @@ function renderBoard() {
   cells.forEach(([type, label], index) => {
     const cell = document.createElement("div");
     cell.className = `cell ${type}`;
-    const tokens = state.game?.players.filter((player) => (player.track || "rat-race") === "rat-race" && player.position === index) || [];
+    const tokens = state.game?.players.filter((player) => (player.track || "money-yard") === "money-yard" && player.position === index) || [];
     cell.innerHTML = `
       <div class="cell-number">${index + 1}</div>
       <div class="cell-label">${label}</div>
@@ -196,15 +199,15 @@ function renderBoard() {
     board.append(cell);
   });
 
-  fastTrackCells.forEach(([type, label], index) => {
+  projectCells.forEach(([type, label], index) => {
     const cell = document.createElement("div");
-    cell.className = `cell fast-track-cell ${type}`;
-    const tokens = state.game?.players.filter((player) => player.track === "fast-track" && player.fastPosition === index) || [];
+    cell.className = `cell project-cell ${type}`;
+    const tokens = state.game?.players.filter((player) => player.track === "project-league" && player.projectPosition === index) || [];
     cell.innerHTML = `
       <div class="cell-number">F${index + 1}</div>
       <div class="cell-label">${label}</div>
       <div class="tokens">
-        ${tokens.map((player) => `<span class="token fast-token" title="${escapeHtml(player.name)}">${escapeHtml(initials(player.name))}</span>`).join("")}
+        ${tokens.map((player) => `<span class="token project-token" title="${escapeHtml(player.name)}">${escapeHtml(initials(player.name))}</span>`).join("")}
       </div>
     `;
     board.append(cell);
@@ -222,6 +225,50 @@ function renderLog() {
 
 function renderDeal() {
   const me = myPlayer();
+  if (me?.pendingProjectDeal) {
+    const deal = me.pendingProjectDeal;
+    const upkeep = deal.upkeep || 0;
+    const netIncome = Math.max(0, deal.passiveIncome - upkeep);
+    dealPanel.classList.remove("hidden");
+    dealPanel.innerHTML = `
+      <div>
+        <p class="eyebrow">Проект</p>
+        <h2>${escapeHtml(deal.title)}</h2>
+      </div>
+      <p>${escapeHtml(deal.text)}</p>
+      <p>Вход: <strong>${money(deal.cost)}</strong></p>
+      <p>Оценка: <strong>${money(deal.marketValue ?? deal.cost)}</strong></p>
+      <p>Доход проектов: <strong>+${money(deal.passiveIncome)}</strong></p>
+      <p>Обслуживание: <strong>${money(upkeep)}</strong></p>
+      <p>Чистый поток: <strong>+${money(netIncome)}</strong></p>
+      <div class="deal-actions">
+        <button id="buyProjectButton" ${me.cash < deal.cost ? "disabled" : ""}>Вложиться</button>
+        <button id="passProjectButton" class="secondary">Пропустить</button>
+      </div>
+    `;
+
+    document.querySelector("#buyProjectButton").addEventListener("click", async () => {
+      runAction(async () => {
+        const data = await api(`/api/rooms/${state.roomCode}/buy-project`, {
+          method: "POST",
+          body: { playerId: state.playerId }
+        });
+        await setGame(data.game);
+      });
+    });
+
+    document.querySelector("#passProjectButton").addEventListener("click", async () => {
+      runAction(async () => {
+        const data = await api(`/api/rooms/${state.roomCode}/pass-project`, {
+          method: "POST",
+          body: { playerId: state.playerId }
+        });
+        await setGame(data.game);
+      });
+    });
+    return;
+  }
+
   if (me?.pendingOpportunityChoice) {
     dealPanel.classList.remove("hidden");
     dealPanel.innerHTML = `
@@ -269,7 +316,7 @@ function renderDeal() {
     <p>Цена: <strong>${money(deal.cost)}</strong></p>
     <p>Взнос: <strong>${money(deal.downPayment ?? deal.cost)}</strong></p>
     <p>Кредит: <strong>${money(deal.loan ?? 0)}</strong>, платёж <strong>${money(deal.payment ?? 0)}</strong></p>
-    <p>Пассивный доход: <strong>${money(deal.passiveIncome)}</strong></p>
+    <p>Инвестдоход: <strong>${money(deal.passiveIncome)}</strong></p>
     <div class="deal-actions">
       <button id="buyCashButton" ${me.cash < deal.cost ? "disabled" : ""}>За наличные</button>
       <button id="buyFinanceButton" ${(deal.loan || 0) <= 0 || me.cash < (deal.downPayment ?? deal.cost) ? "disabled" : ""}>С кредитом</button>
@@ -381,14 +428,21 @@ function renderReport() {
       </li>
     `).join("")
     : "<li>Долгов нет</li>";
-  const dream = me.dream
+  const goal = me.grandGoal;
+  const readiness = me.projectReadiness;
+  const projectIncomeGoal = ruleSummary.projectIncomeGoal ?? 0;
+  const projectPortfolioGoal = ruleSummary.projectPortfolioGoal ?? 0;
+  const projectIncomeProgress = projectIncomeGoal ? `${money(me.projectIncome ?? 0)} / ${money(projectIncomeGoal)}` : money(me.projectIncome ?? 0);
+  const projectCountProgress = projectPortfolioGoal ? `${me.projectAssetCount ?? 0} / ${projectPortfolioGoal}` : `${me.projectAssetCount ?? 0}`;
+  const goalBlock = goal
     ? `
-      <div class="dream-box">
-        <p class="eyebrow">Fast Track</p>
-        <h3>${escapeHtml(me.dream.title)}</h3>
-        <p>${escapeHtml(me.dream.text || "")}</p>
-        <p>Стоимость: <strong>${money(me.dream.cost)}</strong></p>
-        <button id="buyDreamButton" class="mini-button" ${me.track !== "fast-track" || me.cash < me.dream.cost || state.game.status !== "playing" ? "disabled" : ""}>Купить мечту</button>
+      <div class="goal-box">
+        <p class="eyebrow">Лига проектов</p>
+        <h3>${escapeHtml(goal.title)}</h3>
+        <p>${escapeHtml(goal.text || "")}</p>
+        <p>Стоимость: <strong>${money(goal.cost)}</strong></p>
+        <p>Портфельная победа: <strong>${projectCountProgress}</strong> проектов и <strong>${projectIncomeProgress}</strong> дохода.</p>
+        <button id="completeGoalButton" class="mini-button" ${me.track !== "project-league" || me.cash < goal.cost || state.game.status !== "playing" ? "disabled" : ""}>Закрыть цель</button>
       </div>
     `
     : "";
@@ -398,13 +452,18 @@ function renderReport() {
     <h2>Отчёт игрока</h2>
     <div class="report-grid">
       <span>Зарплата<strong>${money(me.salary)}</strong></span>
-      <span>Пассивный доход<strong>${money(me.passiveIncome)}</strong></span>
+      <span>Инвестдоход<strong>${money(me.passiveIncome)}</strong></span>
       <span>Расходы<strong>${money(me.expenses)}</strong></span>
-      <span>Денежный поток<strong>${money(me.monthlyCashflow)}</strong></span>
-      <span>Круг<strong>${me.track === "fast-track" ? "Fast Track" : "Rat Race"}</strong></span>
-      <span>Доход Fast Track<strong>${money(me.fastTrackIncome ?? 0)}</strong></span>
+      <span>Остаток<strong>${money(me.monthlySurplus)}</strong></span>
+      <span>Круг<strong>${me.track === "project-league" ? "Лига проектов" : "Денежный двор"}</strong></span>
+      <span>Репутация<strong>${me.reputation ?? 0}${readiness ? ` / ${readiness.reputationRequired}` : ""}</strong></span>
+      <span>Резерв<strong>${readiness ? `${money(readiness.reserve)} / ${money(readiness.reserveRequired)}` : money(me.cash)}</strong></span>
+      <span>Доход проектов<strong>${projectIncomeProgress}</strong></span>
+      <span>Чистый поток проектов<strong>${money(me.projectNetIncome ?? 0)}</strong></span>
+      <span>Обслуживание проектов<strong>${money(me.projectMaintenanceCost ?? 0)}</strong></span>
+      <span>Проектов<strong>${projectCountProgress}</strong></span>
     </div>
-    ${dream}
+    ${goalBlock}
     <div class="report-columns">
       <div>
         <h3>Активы</h3>
@@ -429,11 +488,11 @@ function renderReport() {
     });
   });
 
-  const buyDreamButton = document.querySelector("#buyDreamButton");
-  if (buyDreamButton) {
-    buyDreamButton.addEventListener("click", async () => {
+  const completeGoalButton = document.querySelector("#completeGoalButton");
+  if (completeGoalButton) {
+    completeGoalButton.addEventListener("click", async () => {
       runAction(async () => {
-        const data = await api(`/api/rooms/${state.roomCode}/buy-dream`, {
+        const data = await api(`/api/rooms/${state.roomCode}/complete-goal`, {
           method: "POST",
           body: { playerId: state.playerId }
         });
@@ -456,7 +515,7 @@ function updateControls() {
   const game = state.game;
   const me = myPlayer();
   const isMyTurn = game.currentPlayerId === state.playerId;
-  const hasPendingDeal = Boolean(me?.pendingOpportunity || me?.pendingOpportunityChoice || me?.pendingMarketOffer);
+  const hasPendingDeal = Boolean(me?.pendingOpportunity || me?.pendingOpportunityChoice || me?.pendingMarketOffer || me?.pendingProjectDeal);
 
   startButton.disabled = game.status !== "lobby";
   turnButton.disabled = game.status !== "playing" || !isMyTurn || hasPendingDeal;
@@ -465,9 +524,9 @@ function updateControls() {
     message.textContent = "Поделись кодом комнаты и начинай игру, когда все готовы.";
   } else if (game.status === "finished") {
     const winner = game.players.find((player) => player.id === game.winnerId);
-    message.textContent = `${winner?.name || "Игрок"} победил на Fast Track.`;
+    message.textContent = `${winner?.name || "Игрок"} победил в Лиге проектов.`;
   } else if (isMyTurn) {
-    message.textContent = hasPendingDeal ? "Заверши текущее решение, затем ход перейдёт дальше." : me?.track === "fast-track" ? "Твой ход на Fast Track." : "Твой ход.";
+    message.textContent = hasPendingDeal ? "Заверши текущее решение, затем ход перейдёт дальше." : me?.track === "project-league" ? "Твой ход в Лиге проектов." : "Твой ход.";
   } else {
     const current = game.players.find((player) => player.id === game.currentPlayerId);
     message.textContent = `Ход игрока ${current?.name || "..."}.`;
@@ -548,8 +607,8 @@ function myPlayer() {
 }
 
 function clearSession() {
-  localStorage.removeItem("cashflow.roomCode");
-  localStorage.removeItem("cashflow.playerId");
+  localStorage.removeItem("meshok.roomCode");
+  localStorage.removeItem("meshok.playerId");
   if (state.eventSource) {
     state.eventSource.close();
   }
