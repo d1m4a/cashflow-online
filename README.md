@@ -27,7 +27,27 @@
 
 ## Запуск
 
-Требуется Node.js 18 или новее.
+Требуется Node.js 18 или новее и Docker Desktop для локальной базы Postgres.
+
+Сначала установи зависимости:
+
+```bash
+npm install
+```
+
+Подними локальную базу:
+
+```bash
+npm run db:up
+```
+
+По умолчанию сервер подключается к Postgres по адресу:
+
+```text
+postgres://cashflow:cashflow@localhost:15432/cashflow_online
+```
+
+При запуске сервер сам применяет схему из `backend/schema.sql`.
 
 ```bash
 npm start
@@ -41,6 +61,21 @@ http://localhost:3000
 
 Для проверки мультиплеера создай комнату и открой второй браузер или вкладку в приватном режиме.
 
+Чтобы остановить локальную базу:
+
+```bash
+npm run db:down
+```
+
+Если при запуске сервера Postgres отвечает ошибкой `28P01` или "password authentication failed", проверь, что запущен именно Docker Postgres проекта. Контейнер публикуется на внешнем порту `15432`, чтобы не конфликтовать с локальным Postgres на стандартном `5432`.
+
+Если локальные данные в Docker-базе не нужны, можно пересоздать volume:
+
+```bash
+docker compose down -v
+npm run db:up
+```
+
 ## Проверка
 
 ```bash
@@ -50,9 +85,12 @@ npm test
 ## Структура проекта
 
 - `backend/server.js` - HTTP-сервер, API комнат и раздача frontend.
+- `backend/db.js` - подключение к Postgres и запросы хранения.
+- `backend/schema.sql` - схема таблиц Postgres.
 - `frontend/index.html` - разметка лобби и игрового экрана.
 - `frontend/app.js` - клиентская логика и обновление интерфейса.
 - `frontend/styles.css` - тёмная UI-тема.
 - `shared/gameRules.js` - правила, состояние игры и действия игроков.
 - `test/gameRules.test.js` - тесты ядра правил.
 - `docs/MVP.md` - границы текущего MVP и план развития.
+- `docs/RULES.md` - текущие реализованные правила игры в текстовом виде.

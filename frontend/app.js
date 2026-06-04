@@ -211,6 +211,7 @@ chatForm.addEventListener("submit", async (event) => {
 
 async function init() {
   try {
+    hideAllPanels();
     const invitedRoom = new URLSearchParams(window.location.search).get("room");
     if (invitedRoom && !state.roomCode) {
       document.querySelector("#joinCode").value = invitedRoom.trim().toUpperCase();
@@ -222,18 +223,28 @@ async function init() {
     await setUser(session.user);
 
     if (!state.user) {
+      clearRoomSession();
+      state.game = null;
       showAuth();
       return;
     }
 
     if (state.roomCode && state.playerId) {
-      await refreshGame();
-      connectRealtime();
-    } else {
-      showLobby();
+      try {
+        await refreshGame();
+        connectRealtime();
+        return;
+      } catch (error) {
+        clearRoomSession();
+        state.game = null;
+        roomBadge.textContent = error.message || "Комната недоступна.";
+      }
     }
+    showLobby();
   } catch (error) {
     clearSession();
+    state.user = null;
+    state.game = null;
     showAuth();
     showError(error.message || "Не удалось загрузить игру.");
   }
@@ -307,10 +318,9 @@ async function setGame(game) {
 }
 
 function showAuth() {
+  state.game = null;
+  hideAllPanels();
   authPanel.classList.remove("hidden");
-  setupPanel.classList.add("hidden");
-  profilePanel.classList.add("hidden");
-  gamePanel.classList.add("hidden");
   roomBadge.textContent = "Войдите";
   setActiveNav(null);
 }
@@ -320,14 +330,12 @@ function showLobby() {
     showAuth();
     return;
   }
+  hideAllPanels();
   authPanel.classList.add("hidden");
-  profilePanel.classList.add("hidden");
   if (state.game) {
-    setupPanel.classList.add("hidden");
     gamePanel.classList.remove("hidden");
   } else {
     setupPanel.classList.remove("hidden");
-    gamePanel.classList.add("hidden");
     roomBadge.textContent = `Профиль: ${state.user.name}`;
   }
   setActiveNav(homeNav);
@@ -338,13 +346,19 @@ function showProfile() {
     showAuth();
     return;
   }
+  hideAllPanels();
   authPanel.classList.add("hidden");
-  setupPanel.classList.add("hidden");
-  gamePanel.classList.add("hidden");
   profilePanel.classList.remove("hidden");
   roomBadge.textContent = `Профиль: ${state.user.name}`;
   renderProfile();
   setActiveNav(profileNav);
+}
+
+function hideAllPanels() {
+  authPanel.classList.add("hidden");
+  setupPanel.classList.add("hidden");
+  profilePanel.classList.add("hidden");
+  gamePanel.classList.add("hidden");
 }
 
 function setActiveNav(active) {
@@ -941,10 +955,24 @@ function victoryReason(winner) {
 }
 
 function clearSession() {
+  clearRoomSession();
+  state.game = null;
   localStorage.removeItem("meshok.roomCode");
   localStorage.removeItem("meshok.playerId");
   if (state.eventSource) {
     state.eventSource.close();
+  }
+  stopPolling();
+}
+
+function clearRoomSession() {
+  localStorage.removeItem("meshok.roomCode");
+  localStorage.removeItem("meshok.playerId");
+  state.roomCode = null;
+  state.playerId = null;
+  if (state.eventSource) {
+    state.eventSource.close();
+    state.eventSource = null;
   }
   stopPolling();
 }
@@ -966,6 +994,16 @@ function money(value) {
 
 function initials(name) {
   return String(name || "?").trim().slice(0, 2).toUpperCase();
+}
+
+function formatDate(timestamp) {
+  return new Date(Number(timestamp)).toLocaleString("ru-RU", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit"
+  });
 }
 
 function escapeHtml(value) {
