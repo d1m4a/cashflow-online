@@ -294,6 +294,25 @@ h2 {
   padding: 14px;
 }
 
+.profile-note {
+  color: var(--muted);
+  line-height: 1.35;
+}
+
+.security-actions,
+.inline-auth-form {
+  display: grid;
+  gap: 8px;
+}
+
+.security-actions {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.inline-auth-form button {
+  margin-top: 2px;
+}
+
 .profile-list {
   display: grid;
   gap: 8px;
@@ -322,6 +341,60 @@ h2 {
 .profile-list small {
   grid-column: 1 / -1;
   color: var(--muted);
+}
+
+.rooms-browser {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.room-list-block {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(5, 10, 20, 0.5);
+  padding: 14px;
+}
+
+.room-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.room-list-item {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 10px;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: rgba(12, 20, 34, 0.72);
+  padding: 10px;
+}
+
+.room-list-item div:first-child {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.room-list-item span,
+.room-list-item small,
+.room-list-empty {
+  color: var(--muted);
+}
+
+.room-list-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: end;
+  gap: 6px;
 }
 
 .game-layout {
@@ -356,6 +429,29 @@ h2 {
   padding: 12px;
 }
 
+.room-title {
+  max-width: 100%;
+  color: var(--ink);
+  font-size: 15px;
+  font-weight: 900;
+  line-height: 1.25;
+}
+
+.room-settings {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(4, 9, 18, 0.38);
+  padding: 10px;
+}
+
+.room-settings label:first-child,
+.room-settings button {
+  grid-column: 1 / -1;
+}
+
 #inviteLink {
   min-height: 36px;
   color: var(--muted);
@@ -380,7 +476,8 @@ h2 {
   gap: 10px;
 }
 
-.player-card {
+.player-card,
+.spectator-card {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: linear-gradient(180deg, rgba(20, 32, 53, 0.96), rgba(8, 14, 25, 0.96));
@@ -395,6 +492,26 @@ h2 {
 .player-card.winner {
   border-color: var(--gold);
   box-shadow: 0 0 24px rgba(240, 181, 76, 0.18);
+}
+
+.spectator-card {
+  background: rgba(4, 9, 18, 0.52);
+}
+
+.spectator-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.spectator-list span {
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  padding: 5px 7px;
 }
 
 .player-name {
@@ -848,6 +965,15 @@ h2 {
 
   .profile-grid {
     grid-template-columns: 1fr;
+  }
+
+  .rooms-browser,
+  .room-list-item {
+    grid-template-columns: 1fr;
+  }
+
+  .room-list-actions {
+    justify-content: start;
   }
 }
 

@@ -8,8 +8,13 @@ const pool = new Pool({
 });
 
 async function initDb() {
-  const schema = fs.readFileSync(path.join(__dirname, "schema.sql"), "utf8");
-  await pool.query(schema);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS schema_migrations (
+      id TEXT PRIMARY KEY,
+      applied_at BIGINT NOT NULL
+    )
+  `);
+  await runMigrations();
 }
 
 async function closeDb() {
@@ -28,9 +33,18 @@ async function findUserByEmail(email) {
 
 async function insertUser(user) {
   await pool.query(
-    `INSERT INTO users (id, name, email, password, created_at, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6)`,
-    [user.id, user.name, user.email, user.password, user.createdAt, user.updatedAt]
+    `INSERT INTO users (id, name, email, password, email_verified_at, password_changed_at, created_at, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+    [
+      user.id,
+      user.name,
+      user.email,
+      user.password,
+      user.emailVerifiedAt || null,
+      user.passwordChangedAt,
+      user.createdAt,
+      user.updatedAt
+    ]
   );
 }
 
@@ -41,11 +55,32 @@ async function updateUserName(id, name, updatedAt) {
   );
 }
 
+async function updateUserPassword(id, password, updatedAt) {
+  await pool.query(
+    `UPDATE users
+     SET password = $2,
+         password_changed_at = $3,
+         updated_at = $3
+     WHERE id = $1`,
+    [id, password, updatedAt]
+  );
+}
+
+async function verifyUserEmail(id, verifiedAt) {
+  await pool.query(
+    `UPDATE users
+     SET email_verified_at = COALESCE(email_verified_at, $2),
+         updated_at = $2
+     WHERE id = $1`,
+    [id, verifiedAt]
+  );
+}
+
 async function insertSession(session) {
   await pool.query(
-    `INSERT INTO sessions (token, user_id, created_at, last_seen_at)
-     VALUES ($1, $2, $3, $4)`,
-    [session.token, session.userId, session.createdAt, session.lastSeenAt]
+    `INSERT INTO sessions (token, user_id, created_at, last_seen_at, expires_at)
+     VALUES ($1, $2, $3, $4, $5)`,
+    [session.token, session.userId, session.createdAt, session.lastSeenAt, session.expiresAt]
   );
 }
 
@@ -60,6 +95,53 @@ async function touchSession(token, lastSeenAt) {
 
 async function deleteSession(token) {
   await pool.query("DELETE FROM sessions WHERE token = $1", [token]);
+}
+
+async function revokeSession(token, revokedAt) {
+  await pool.query("UPDATE sessions SET revoked_at = $2 WHERE token = $1", [token, revokedAt]);
+}
+
+async function revokeUserSessions(userId, revokedAt, exceptToken = null) {
+  const params = [userId, revokedAt];
+  let exceptClause = "";
+  if (exceptToken) {
+    params.push(exceptToken);
+    exceptClause = "AND token <> $3";
+  }
+  await pool.query(
+    `UPDATE sessions
+     SET revoked_at = $2
+     WHERE user_id = $1
+       AND revoked_at IS NULL
+       ${exceptClause}`,
+    params
+  );
+}
+
+async function insertAuthToken(token) {
+  await pool.query(
+    `INSERT INTO auth_tokens (id, user_id, kind, token_digest, expires_at, created_at)
+     VALUES ($1, $2, $3, $4, $5, $6)`,
+    [token.id, token.userId, token.kind, token.tokenDigest, token.expiresAt, token.createdAt]
+  );
+}
+
+async function findAuthToken(kind, tokenDigest) {
+  const result = await pool.query(
+    `SELECT *
+     FROM auth_tokens
+     WHERE kind = $1 AND token_digest = $2`,
+    [kind, tokenDigest]
+  );
+  return rowToAuthToken(result.rows[0]);
+}
+
+async function markAuthTokenUsed(id, usedAt) {
+  await pool.query("UPDATE auth_tokens SET used_at = $2 WHERE id = $1", [id, usedAt]);
+}
+
+async function deleteUserAuthTokens(userId, kind) {
+  await pool.query("DELETE FROM auth_tokens WHERE user_id = $1 AND kind = $2", [userId, kind]);
 }
 
 async function loadRooms() {
@@ -178,6 +260,43 @@ async function getUserStats(userId) {
   };
 }
 
+async function healthCheck() {
+  await pool.query("SELECT 1");
+}
+
+async function runMigrations() {
+  const migrationsDir = path.join(__dirname, "migrations");
+  const files = fs.readdirSync(migrationsDir)
+    .filter((file) => file.endsWith(".sql"))
+    .sort();
+
+  for (const file of files) {
+    const migration = path.basename(file, ".sql");
+    const applied = await pool.query("SELECT 1 FROM schema_migrations WHERE id = $1", [migration]);
+    if (applied.rowCount > 0) {
+      continue;
+    }
+
+    const sql = fs.readFileSync(path.join(migrationsDir, file), "utf8");
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query(sql);
+      await client.query(
+        "INSERT INTO schema_migrations (id, applied_at) VALUES ($1, $2)",
+        [migration, Date.now()]
+      );
+      await client.query("COMMIT");
+      console.log(`Applied migration ${migration}`);
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+}
+
 function rowToUser(row) {
   if (!row) return null;
   return {
@@ -185,6 +304,8 @@ function rowToUser(row) {
     name: row.name,
     email: row.email,
     password: row.password,
+    emailVerifiedAt: row.email_verified_at ? Number(row.email_verified_at) : null,
+    passwordChangedAt: row.password_changed_at ? Number(row.password_changed_at) : null,
     createdAt: Number(row.created_at),
     updatedAt: Number(row.updated_at)
   };
@@ -196,7 +317,22 @@ function rowToSession(row) {
     token: row.token,
     userId: row.user_id,
     createdAt: Number(row.created_at),
-    lastSeenAt: Number(row.last_seen_at)
+    lastSeenAt: Number(row.last_seen_at),
+    expiresAt: row.expires_at ? Number(row.expires_at) : null,
+    revokedAt: row.revoked_at ? Number(row.revoked_at) : null
+  };
+}
+
+function rowToAuthToken(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    userId: row.user_id,
+    kind: row.kind,
+    tokenDigest: row.token_digest,
+    expiresAt: Number(row.expires_at),
+    usedAt: row.used_at ? Number(row.used_at) : null,
+    createdAt: Number(row.created_at)
   };
 }
 
@@ -224,14 +360,23 @@ module.exports = {
   findUserByEmail,
   insertUser,
   updateUserName,
+  updateUserPassword,
+  verifyUserEmail,
   insertSession,
   findSession,
   touchSession,
   deleteSession,
+  revokeSession,
+  revokeUserSessions,
+  insertAuthToken,
+  findAuthToken,
+  markAuthTokenUsed,
+  deleteUserAuthTokens,
   loadRooms,
   saveRoom,
   saveRooms,
   addHistoryRecords,
   getUserHistory,
-  getUserStats
+  getUserStats,
+  healthCheck
 };

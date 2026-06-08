@@ -6,10 +6,15 @@ const db = require("./db");
 const {
   createGame,
   addPlayer,
+  addSpectator,
   setPlayerReady,
   startGame,
   restartGame,
   kickPlayer,
+  updateRoomSettings,
+  transferHost,
+  leaveRoom,
+  archiveRoom,
   takeTurn,
   drawOpportunity,
   buyOpportunity,
@@ -32,6 +37,14 @@ const ROOT = path.resolve(__dirname, "..");
 const FRONTEND_DIR = path.join(ROOT, "frontend");
 const rooms = new Map();
 const roomStreams = new Map();
+const authAttempts = new Map();
+const AUTH_RATE_WINDOW_MS = Number(process.env.AUTH_RATE_WINDOW_MS || 60_000);
+const AUTH_RATE_MAX = Number(process.env.AUTH_RATE_MAX || 12);
+const SESSION_MAX_AGE_MS = Number(process.env.SESSION_MAX_AGE_MS || 30 * 24 * 60 * 60 * 1000);
+const SESSION_IDLE_MS = Number(process.env.SESSION_IDLE_MS || 7 * 24 * 60 * 60 * 1000);
+const EMAIL_TOKEN_TTL_MS = Number(process.env.EMAIL_TOKEN_TTL_MS || 24 * 60 * 60 * 1000);
+const PASSWORD_RESET_TTL_MS = Number(process.env.PASSWORD_RESET_TTL_MS || 60 * 60 * 1000);
+const EMAIL_DEV_MODE = process.env.EMAIL_DEV_MODE !== "false";
 
 const server = http.createServer(async (req, res) => {
   try {
@@ -44,8 +57,7 @@ const server = http.createServer(async (req, res) => {
 
     serveStatic(req, res, url);
   } catch (error) {
-    sendJson(res, 500, { error: "Внутренняя ошибка сервера." });
-    console.error(error);
+    handleUnexpectedError(res, error);
   }
 });
 
@@ -68,6 +80,17 @@ async function startServer(port = PORT) {
 }
 
 async function handleApi(req, res, url) {
+  if (req.method === "GET" && url.pathname === "/api/health") {
+    try {
+      await db.healthCheck();
+      sendJson(res, 200, { ok: true, database: "ok" });
+    } catch (error) {
+      console.error("Healthcheck failed:", error);
+      sendJson(res, 503, { ok: false, database: "error" });
+    }
+    return;
+  }
+
   if (req.method === "GET" && url.pathname === "/api/rules") {
     sendJson(res, 200, serializeRules());
     return;
@@ -78,12 +101,23 @@ async function handleApi(req, res, url) {
     return;
   }
 
+  if (req.method === "GET" && url.pathname === "/api/rooms") {
+    const user = await requireUser(req, res);
+    if (!user) return;
+    sendJson(res, 200, { rooms: listRoomsForUser(user.id) });
+    return;
+  }
+
   if (req.method === "POST" && url.pathname === "/api/rooms") {
     const user = await requireUser(req, res);
     if (!user) return;
     const body = await readJson(req);
     const code = uniqueRoomCode();
-    const game = createGame(code, body.name || user.name, body.professionId, user.id);
+    const game = createGame(code, body.name || user.name, body.professionId, user.id, {
+      title: body.title,
+      privacy: body.privacy,
+      maxPlayers: body.maxPlayers
+    });
     rooms.set(code, game);
     await persistGame(game);
     sendJson(res, 201, {
@@ -141,8 +175,67 @@ async function handleApi(req, res, url) {
       return;
     }
 
+    if (action === "spectate") {
+      const spectator = addSpectator(game, body.name || user.name, user.id);
+      await persistGame(game);
+      const payload = { spectatorId: spectator.id, game: serializeGame(game) };
+      sendJson(res, 200, payload);
+      broadcastRoom(game);
+      return;
+    }
+
+    if (action === "leave") {
+      const participantId = body.playerId || body.spectatorId;
+      if (!canActAsParticipant(game, user.id, participantId)) {
+        sendJson(res, 403, { error: "Нельзя управлять другим участником." });
+        return;
+      }
+      leaveRoom(game, participantId);
+      await persistGame(game);
+      const payload = { game: serializeGame(game) };
+      sendJson(res, 200, payload);
+      broadcastRoom(game);
+      return;
+    }
+
+    if (game.archivedAt) {
+      sendJson(res, 400, { error: "Комната архивирована." });
+      return;
+    }
+
     if (!canActAsPlayer(game, user.id, body.playerId)) {
       sendJson(res, 403, { error: "Нельзя управлять другим игроком." });
+      return;
+    }
+
+    if (action === "settings") {
+      updateRoomSettings(game, body.playerId, {
+        title: body.title,
+        privacy: body.privacy,
+        maxPlayers: body.maxPlayers
+      });
+      await persistGame(game);
+      const payload = { game: serializeGame(game) };
+      sendJson(res, 200, payload);
+      broadcastRoom(game);
+      return;
+    }
+
+    if (action === "transfer-host") {
+      transferHost(game, body.playerId, body.targetPlayerId);
+      await persistGame(game);
+      const payload = { game: serializeGame(game) };
+      sendJson(res, 200, payload);
+      broadcastRoom(game);
+      return;
+    }
+
+    if (action === "archive") {
+      archiveRoom(game, body.playerId);
+      await persistGame(game);
+      const payload = { game: serializeGame(game) };
+      sendJson(res, 200, payload);
+      broadcastRoom(game);
       return;
     }
 
@@ -293,6 +386,16 @@ async function handleApi(req, res, url) {
 }
 
 async function handleAuthApi(req, res, url) {
+  if (req.method === "POST" && (
+    url.pathname === "/api/auth/register" ||
+    url.pathname === "/api/auth/login" ||
+    url.pathname === "/api/auth/request-password-reset"
+  )) {
+    if (!checkRateLimit(req, res, url.pathname)) {
+      return;
+    }
+  }
+
   if (req.method === "GET" && url.pathname === "/api/me") {
     const user = await currentUser(req);
     sendJson(res, 200, { user: user ? await serializeUser(user) : null });
@@ -340,9 +443,43 @@ async function handleAuthApi(req, res, url) {
     }
     const user = createUser(name, email, password);
     await db.insertUser(user);
+    const verification = await createAuthToken(user.id, "email_verification", EMAIL_TOKEN_TTL_MS);
     const token = await createSession(user.id);
     setSessionCookie(res, token);
-    sendJson(res, 201, { user: await serializeUser(user) });
+    sendJson(res, 201, {
+      user: await serializeUser(user),
+      emailVerification: devTokenPayload(req, "/api/auth/verify-email", verification)
+    });
+    return;
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/auth/resend-verification") {
+    const user = await requireUser(req, res);
+    if (!user) return;
+    if (user.emailVerifiedAt) {
+      sendJson(res, 200, { ok: true, alreadyVerified: true });
+      return;
+    }
+    await db.deleteUserAuthTokens(user.id, "email_verification");
+    const verification = await createAuthToken(user.id, "email_verification", EMAIL_TOKEN_TTL_MS);
+    sendJson(res, 200, {
+      ok: true,
+      emailVerification: devTokenPayload(req, "/api/auth/verify-email", verification)
+    });
+    return;
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/auth/verify-email") {
+    const body = await readJson(req);
+    const result = await consumeAuthToken("email_verification", body.token);
+    if (!result.ok) {
+      sendJson(res, 400, { error: result.error });
+      return;
+    }
+    const now = Date.now();
+    await db.verifyUserEmail(result.token.userId, now);
+    const user = await db.findUserById(result.token.userId);
+    sendJson(res, 200, { ok: true, user: user ? await serializeUser(user) : null });
     return;
   }
 
@@ -367,6 +504,76 @@ async function handleAuthApi(req, res, url) {
       await db.deleteSession(token);
     }
     clearSessionCookie(res);
+    sendJson(res, 200, { ok: true });
+    return;
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/auth/logout-all") {
+    const user = await requireUser(req, res);
+    if (!user) return;
+    const token = sessionToken(req);
+    await db.revokeUserSessions(user.id, Date.now());
+    clearSessionCookie(res);
+    if (token) {
+      await db.deleteSession(token);
+    }
+    sendJson(res, 200, { ok: true });
+    return;
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/auth/change-password") {
+    const user = await requireUser(req, res);
+    if (!user) return;
+    const body = await readJson(req);
+    const currentPassword = String(body.currentPassword || "");
+    const nextPassword = String(body.nextPassword || "");
+    if (!verifyPassword(currentPassword, user.password)) {
+      sendJson(res, 400, { error: "Текущий пароль неверный." });
+      return;
+    }
+    if (nextPassword.length < 6) {
+      sendJson(res, 400, { error: "Новый пароль должен быть от 6 символов." });
+      return;
+    }
+    const now = Date.now();
+    await db.updateUserPassword(user.id, hashPassword(nextPassword), now);
+    await db.revokeUserSessions(user.id, now, sessionToken(req));
+    sendJson(res, 200, { ok: true });
+    return;
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/auth/request-password-reset") {
+    const body = await readJson(req);
+    const email = normalizeEmail(body.email);
+    const user = email ? await db.findUserByEmail(email) : null;
+    if (!user) {
+      sendJson(res, 200, { ok: true });
+      return;
+    }
+    await db.deleteUserAuthTokens(user.id, "password_reset");
+    const reset = await createAuthToken(user.id, "password_reset", PASSWORD_RESET_TTL_MS);
+    sendJson(res, 200, {
+      ok: true,
+      passwordReset: devTokenPayload(req, "/api/auth/reset-password", reset)
+    });
+    return;
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/auth/reset-password") {
+    const body = await readJson(req);
+    const nextPassword = String(body.nextPassword || "");
+    if (nextPassword.length < 6) {
+      sendJson(res, 400, { error: "Новый пароль должен быть от 6 символов." });
+      return;
+    }
+    const result = await consumeAuthToken("password_reset", body.token);
+    if (!result.ok) {
+      sendJson(res, 400, { error: result.error });
+      return;
+    }
+    const now = Date.now();
+    await db.updateUserPassword(result.token.userId, hashPassword(nextPassword), now);
+    await db.revokeUserSessions(result.token.userId, now);
     sendJson(res, 200, { ok: true });
     return;
   }
@@ -414,7 +621,7 @@ function broadcastRoom(game) {
 
 function broadcastRoomsForUser(userId) {
   for (const game of rooms.values()) {
-    if (game.players.some((player) => player.accountId === userId)) {
+    if (game.players.some((player) => player.accountId === userId) || game.spectators?.some((spectator) => spectator.accountId === userId)) {
       broadcastRoom(game);
     }
   }
@@ -472,6 +679,7 @@ async function loadRooms() {
       if (!room.hostId && room.players[0]) {
         room.hostId = room.players[0].id;
       }
+      serializeGame(room);
       rooms.set(room.roomCode, room);
     }
   }
@@ -490,6 +698,8 @@ function createUser(name, email, password) {
     name,
     email,
     password: hashPassword(password),
+    emailVerifiedAt: null,
+    passwordChangedAt: now,
     createdAt: now,
     updatedAt: now
   };
@@ -497,11 +707,13 @@ function createUser(name, email, password) {
 
 async function createSession(userId) {
   const token = crypto.randomBytes(32).toString("hex");
+  const now = Date.now();
   await db.insertSession({
     token,
     userId,
-    createdAt: Date.now(),
-    lastSeenAt: Date.now()
+    createdAt: now,
+    lastSeenAt: now,
+    expiresAt: now + SESSION_MAX_AGE_MS
   });
   return token;
 }
@@ -515,7 +727,12 @@ async function currentUser(req) {
   if (!session) {
     return null;
   }
-  await db.touchSession(token, Date.now());
+  const now = Date.now();
+  if (session.revokedAt || (session.expiresAt && session.expiresAt <= now) || now - session.lastSeenAt > SESSION_IDLE_MS) {
+    await db.deleteSession(token);
+    return null;
+  }
+  await db.touchSession(token, now);
   return db.findUserById(session.userId);
 }
 
@@ -533,10 +750,60 @@ async function serializeUser(user) {
     id: user.id,
     name: user.name,
     email: user.email,
+    emailVerified: Boolean(user.emailVerifiedAt),
+    emailVerifiedAt: user.emailVerifiedAt,
     stats: await db.getUserStats(user.id),
     history: await db.getUserHistory(user.id, 20),
     rooms: savedRoomsForUser(user.id)
   };
+}
+
+async function createAuthToken(userId, kind, ttlMs) {
+  const rawToken = crypto.randomBytes(32).toString("hex");
+  const now = Date.now();
+  const token = {
+    id: makeId(),
+    userId,
+    kind,
+    token: rawToken,
+    tokenDigest: digestToken(rawToken),
+    expiresAt: now + ttlMs,
+    createdAt: now
+  };
+  await db.insertAuthToken(token);
+  return token;
+}
+
+async function consumeAuthToken(kind, rawToken) {
+  const tokenValue = String(rawToken || "").trim();
+  if (!tokenValue) {
+    return { ok: false, error: "Токен не указан." };
+  }
+  const token = await db.findAuthToken(kind, digestToken(tokenValue));
+  if (!token || token.usedAt) {
+    return { ok: false, error: "Токен недействителен." };
+  }
+  if (token.expiresAt <= Date.now()) {
+    return { ok: false, error: "Срок действия токена истёк." };
+  }
+  await db.markAuthTokenUsed(token.id, Date.now());
+  return { ok: true, token };
+}
+
+function devTokenPayload(req, apiPath, token) {
+  if (!EMAIL_DEV_MODE) {
+    return { sent: true };
+  }
+  const origin = `${req.headers["x-forwarded-proto"] || "http"}://${req.headers.host}`;
+  return {
+    sent: false,
+    token: token.token,
+    url: `${origin}/#${apiPath}?token=${encodeURIComponent(token.token)}`
+  };
+}
+
+function digestToken(token) {
+  return crypto.createHash("sha256").update(String(token)).digest("hex");
 }
 
 function savedRoomsForUser(userId) {
@@ -544,7 +811,10 @@ function savedRoomsForUser(userId) {
     .filter((game) => game.players.some((player) => player.accountId === userId))
     .map((game) => ({
       roomCode: game.roomCode,
+      title: game.title || `Комната ${game.roomCode}`,
+      privacy: game.privacy || "private",
       status: game.status,
+      archived: Boolean(game.archivedAt),
       host: game.players.find((player) => player.id === game.hostId)?.name || "Хост",
       players: game.players.map((player) => player.name),
       playerId: game.players.find((player) => player.accountId === userId)?.id || null,
@@ -552,6 +822,41 @@ function savedRoomsForUser(userId) {
       createdAt: game.createdAt
     }))
     .sort((a, b) => b.updatedAt - a.updatedAt);
+}
+
+function listRoomsForUser(userId) {
+  return [...rooms.values()]
+    .map((game) => roomSummaryForUser(game, userId))
+    .filter((room) => !room.archived && (room.privacy === "public" || room.isPlayer || room.isSpectator))
+    .sort((a, b) => {
+      if (a.isPlayer !== b.isPlayer) return a.isPlayer ? -1 : 1;
+      if (a.privacy !== b.privacy) return a.privacy === "public" ? -1 : 1;
+      return b.updatedAt - a.updatedAt;
+    });
+}
+
+function roomSummaryForUser(game, userId) {
+  const player = game.players.find((item) => item.accountId === userId);
+  const spectator = game.spectators?.find((item) => item.accountId === userId);
+  const host = game.players.find((item) => item.id === game.hostId);
+  return {
+    roomCode: game.roomCode,
+    title: game.title || `Комната ${game.roomCode}`,
+    privacy: game.privacy || "private",
+    status: game.status,
+    archived: Boolean(game.archivedAt),
+    host: host?.name || "Хост",
+    maxPlayers: game.maxPlayers || 4,
+    playerCount: game.players.length,
+    spectatorCount: game.spectators?.length || 0,
+    players: game.players.map((item) => item.name),
+    playerId: player?.id || null,
+    spectatorId: spectator?.id || null,
+    isPlayer: Boolean(player),
+    isSpectator: Boolean(spectator),
+    createdAt: game.createdAt,
+    updatedAt: game.updatedAt
+  };
 }
 
 async function recordFinishedGame(game) {
@@ -595,12 +900,21 @@ function playerNetWorth(player) {
 }
 
 function canReadRoom(game, userId) {
-  return game.players.some((player) => player.accountId === userId);
+  if (!game.archivedAt && game.privacy === "public") {
+    return true;
+  }
+  return game.players.some((player) => player.accountId === userId)
+    || game.spectators?.some((spectator) => spectator.accountId === userId);
 }
 
 function canActAsPlayer(game, userId, playerId) {
   const player = game.players.find((item) => item.id === playerId);
   return Boolean(player && player.accountId === userId);
+}
+
+function canActAsParticipant(game, userId, participantId) {
+  return canActAsPlayer(game, userId, participantId)
+    || Boolean(game.spectators?.some((item) => item.id === participantId && item.accountId === userId));
 }
 
 function hashPassword(password) {
@@ -639,6 +953,56 @@ function setSessionCookie(res, token) {
 
 function clearSessionCookie(res) {
   res.setHeader("Set-Cookie", "meshok_session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0");
+}
+
+function checkRateLimit(req, res, scope) {
+  const now = Date.now();
+  const key = `${scope}:${clientIp(req)}`;
+  const bucket = authAttempts.get(key) || { count: 0, resetAt: now + AUTH_RATE_WINDOW_MS };
+
+  if (bucket.resetAt <= now) {
+    bucket.count = 0;
+    bucket.resetAt = now + AUTH_RATE_WINDOW_MS;
+  }
+
+  bucket.count += 1;
+  authAttempts.set(key, bucket);
+
+  if (bucket.count <= AUTH_RATE_MAX) {
+    return true;
+  }
+
+  const retryAfter = Math.max(1, Math.ceil((bucket.resetAt - now) / 1000));
+  res.writeHead(429, {
+    "Content-Type": "application/json; charset=utf-8",
+    "Cache-Control": "no-store",
+    "Retry-After": String(retryAfter)
+  });
+  res.end(JSON.stringify({ error: "Слишком много попыток. Попробуй позже.", retryAfter }));
+  return false;
+}
+
+function clientIp(req) {
+  const forwarded = req.headers["x-forwarded-for"];
+  if (typeof forwarded === "string" && forwarded.trim()) {
+    return forwarded.split(",")[0].trim();
+  }
+  return req.socket.remoteAddress || "unknown";
+}
+
+function handleUnexpectedError(res, error) {
+  console.error(error);
+  if (res.headersSent) {
+    res.end();
+    return;
+  }
+  const status = isDatabaseError(error) ? 503 : 500;
+  const message = status === 503 ? "База данных временно недоступна." : "Внутренняя ошибка сервера.";
+  sendJson(res, status, { error: message });
+}
+
+function isDatabaseError(error) {
+  return Boolean(error?.code || error?.severity || error?.routine);
 }
 
 function normalizeEmail(email) {

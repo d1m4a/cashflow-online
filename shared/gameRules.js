@@ -268,13 +268,48 @@ function createPlayer(id, name, professionId, accountId = null) {
   };
 }
 
-function createGame(roomCode, hostName, professionId, hostAccountId = null) {
+function normalizeRoomSettings(options = {}) {
+  const rawTitle = String(options.title || "").trim();
+  const rawPrivacy = String(options.privacy || "private").toLowerCase();
+  const maxPlayers = Number(options.maxPlayers || 4);
+  return {
+    title: rawTitle.slice(0, 40) || `Комната ${options.roomCode || ""}`.trim(),
+    privacy: rawPrivacy === "public" ? "public" : "private",
+    maxPlayers: Math.min(4, Math.max(1, Number.isFinite(maxPlayers) ? Math.floor(maxPlayers) : 4))
+  };
+}
+
+function ensureRoomShape(game) {
+  if (!game.title) {
+    game.title = `Комната ${game.roomCode}`;
+  }
+  if (!game.privacy) {
+    game.privacy = "private";
+  }
+  if (!game.maxPlayers) {
+    game.maxPlayers = 4;
+  }
+  if (!Array.isArray(game.spectators)) {
+    game.spectators = [];
+  }
+  if (typeof game.archivedAt === "undefined") {
+    game.archivedAt = null;
+  }
+}
+
+function createGame(roomCode, hostName, professionId, hostAccountId = null, options = {}) {
+  const settings = normalizeRoomSettings({ ...options, roomCode });
   const host = createPlayer(makeId(), hostName || "Хост", professionId, hostAccountId);
   return {
     roomCode,
+    title: settings.title,
+    privacy: settings.privacy,
+    maxPlayers: settings.maxPlayers,
+    archivedAt: null,
     status: "lobby",
     hostId: host.id,
     players: [host],
+    spectators: [],
     currentPlayerIndex: 0,
     winnerId: null,
     log: [`Комната ${roomCode} создана.`],
@@ -285,20 +320,129 @@ function createGame(roomCode, hostName, professionId, hostAccountId = null) {
 }
 
 function addPlayer(game, name, professionId, accountId = null) {
+  ensureRoomShape(game);
+  assertRoomOpen(game);
   if (game.status !== "lobby") {
     throw new Error("Игра уже началась.");
   }
-  if (game.players.length >= 4) {
-    throw new Error("В MVP максимум 4 игрока.");
+  if (accountId) {
+    const existing = game.players.find((item) => item.accountId === accountId);
+    if (existing) {
+      return existing;
+    }
   }
-  if (accountId && game.players.some((item) => item.accountId === accountId)) {
-    throw new Error("Этот аккаунт уже в комнате.");
+  if (game.players.length >= game.maxPlayers) {
+    throw new Error(`В комнате максимум ${game.maxPlayers} игрока.`);
+  }
+  if (accountId) {
+    game.spectators = game.spectators.filter((item) => item.accountId !== accountId);
   }
   const player = createPlayer(makeId(), name || `Игрок ${game.players.length + 1}`, professionId, accountId);
   game.players.push(player);
   game.log.unshift(`${player.name} присоединился к комнате.`);
   touch(game);
   return player;
+}
+
+function addSpectator(game, name, accountId = null) {
+  ensureRoomShape(game);
+  assertRoomOpen(game);
+  if (accountId && game.players.some((player) => player.accountId === accountId)) {
+    throw new Error("Этот аккаунт уже играет в комнате.");
+  }
+  if (accountId) {
+    const existing = game.spectators.find((item) => item.accountId === accountId);
+    if (existing) {
+      return existing;
+    }
+  }
+  const spectator = {
+    id: makeId(),
+    accountId,
+    name: String(name || `Наблюдатель ${game.spectators.length + 1}`).slice(0, 24),
+    joinedAt: Date.now()
+  };
+  game.spectators.push(spectator);
+  game.log.unshift(`${spectator.name} наблюдает за комнатой.`);
+  touch(game);
+  return spectator;
+}
+
+function updateRoomSettings(game, hostId, settings = {}) {
+  ensureRoomShape(game);
+  assertRoomOpen(game);
+  assertHost(game, hostId);
+  const next = normalizeRoomSettings({
+    title: settings.title ?? game.title,
+    privacy: settings.privacy ?? game.privacy,
+    maxPlayers: settings.maxPlayers ?? game.maxPlayers,
+    roomCode: game.roomCode
+  });
+  if (next.maxPlayers < game.players.length) {
+    throw new Error("Лимит не может быть меньше текущего числа игроков.");
+  }
+  game.title = next.title;
+  game.privacy = next.privacy;
+  game.maxPlayers = next.maxPlayers;
+  game.log.unshift("Настройки комнаты обновлены.");
+  touch(game);
+}
+
+function transferHost(game, hostId, targetPlayerId) {
+  ensureRoomShape(game);
+  assertRoomOpen(game);
+  assertHost(game, hostId);
+  const nextHost = game.players.find((player) => player.id === targetPlayerId);
+  if (!nextHost) {
+    throw new Error("Новый хост не найден среди игроков.");
+  }
+  game.hostId = nextHost.id;
+  game.log.unshift(`${nextHost.name} теперь хост комнаты.`);
+  touch(game);
+}
+
+function leaveRoom(game, playerId) {
+  ensureRoomShape(game);
+  assertRoomOpen(game);
+  const playerIndex = game.players.findIndex((player) => player.id === playerId);
+  if (playerIndex < 0) {
+    const spectatorIndex = game.spectators.findIndex((spectator) => spectator.id === playerId);
+    if (spectatorIndex < 0) {
+      throw new Error("Участник не найден.");
+    }
+    const [spectator] = game.spectators.splice(spectatorIndex, 1);
+    game.log.unshift(`${spectator.name} вышел из наблюдения.`);
+    touch(game);
+    return { archived: false };
+  }
+
+  const activePlayerId = currentPlayer(game)?.id || null;
+  const [player] = game.players.splice(playerIndex, 1);
+  if (game.players.length === 0) {
+    game.archivedAt = Date.now();
+    game.log.unshift("Комната архивирована: игроков не осталось.");
+    touch(game);
+    return { archived: true };
+  }
+  if (player.id === game.hostId) {
+    game.hostId = game.players[0].id;
+    game.log.unshift(`${game.players[0].name} теперь хост комнаты.`);
+  }
+  const nextActiveIndex = activePlayerId ? game.players.findIndex((item) => item.id === activePlayerId) : -1;
+  game.currentPlayerIndex = nextActiveIndex >= 0 ? nextActiveIndex : Math.min(game.currentPlayerIndex, game.players.length - 1);
+  game.log.unshift(`${player.name} покинул комнату.`);
+  touch(game);
+  return { archived: false };
+}
+
+function archiveRoom(game, hostId) {
+  ensureRoomShape(game);
+  assertHost(game, hostId);
+  if (!game.archivedAt) {
+    game.archivedAt = Date.now();
+    game.log.unshift("Комната архивирована.");
+    touch(game);
+  }
 }
 
 function setPlayerReady(game, playerId, ready = true) {
@@ -344,6 +488,8 @@ function restartGame(game, hostId) {
 }
 
 function kickPlayer(game, hostId, playerId) {
+  ensureRoomShape(game);
+  assertRoomOpen(game);
   assertHost(game, hostId);
   if (game.status !== "lobby") {
     throw new Error("Кикать игроков можно только в лобби.");
@@ -851,6 +997,7 @@ function enterProjectLeague(game, player) {
 }
 
 function serializeGame(game) {
+  ensureRoomShape(game);
   if (!game.hostId && game.players[0]) {
     game.hostId = game.players[0].id;
   }
@@ -886,11 +1033,18 @@ function resetPlayerForNewGame(player) {
 }
 
 function assertHost(game, playerId) {
+  ensureRoomShape(game);
   if (!game.hostId && game.players[0]) {
     game.hostId = game.players[0].id;
   }
   if (!playerId || playerId !== game.hostId) {
     throw new Error("Это действие доступно только хосту.");
+  }
+}
+
+function assertRoomOpen(game) {
+  if (game.archivedAt) {
+    throw new Error("Комната архивирована.");
   }
 }
 
@@ -975,10 +1129,15 @@ module.exports = {
   PROFESSIONS,
   createGame,
   addPlayer,
+  addSpectator,
   setPlayerReady,
   startGame,
   restartGame,
   kickPlayer,
+  updateRoomSettings,
+  transferHost,
+  leaveRoom,
+  archiveRoom,
   takeTurn,
   drawOpportunity,
   buyOpportunity,

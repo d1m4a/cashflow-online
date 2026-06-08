@@ -6,6 +6,7 @@ let ruleSummary = {};
 const state = {
   roomCode: localStorage.getItem("meshok.roomCode"),
   playerId: localStorage.getItem("meshok.playerId"),
+  spectatorId: localStorage.getItem("meshok.spectatorId"),
   user: null,
   game: null,
   pollTimer: null,
@@ -15,14 +16,25 @@ const state = {
 const authPanel = document.querySelector("#authPanel");
 const loginForm = document.querySelector("#loginForm");
 const registerForm = document.querySelector("#registerForm");
+const resetRequestForm = document.querySelector("#resetRequestForm");
+const resetPasswordForm = document.querySelector("#resetPasswordForm");
 const profilePanel = document.querySelector("#profilePanel");
 const profileForm = document.querySelector("#profileForm");
+const verifyEmailForm = document.querySelector("#verifyEmailForm");
+const changePasswordForm = document.querySelector("#changePasswordForm");
+const resendVerificationButton = document.querySelector("#resendVerificationButton");
+const logoutAllButton = document.querySelector("#logoutAllButton");
+const emailStatus = document.querySelector("#emailStatus");
 const profileTitle = document.querySelector("#profileTitle");
 const profileEmail = document.querySelector("#profileEmail");
 const profileName = document.querySelector("#profileName");
 const profileStats = document.querySelector("#profileStats");
 const profileRooms = document.querySelector("#profileRooms");
 const profileHistory = document.querySelector("#profileHistory");
+const roomsPanel = document.querySelector("#roomsPanel");
+const publicRoomsList = document.querySelector("#publicRoomsList");
+const myRoomsList = document.querySelector("#myRoomsList");
+const refreshRoomsButton = document.querySelector("#refreshRoomsButton");
 const homeNav = document.querySelector("#homeNav");
 const roomsNav = document.querySelector("#roomsNav");
 const profileNav = document.querySelector("#profileNav");
@@ -32,13 +44,21 @@ const joinForm = document.querySelector("#joinForm");
 const setupPanel = document.querySelector("#setupPanel");
 const gamePanel = document.querySelector("#gamePanel");
 const roomBadge = document.querySelector("#roomBadge");
+const roomTitle = document.querySelector("#roomTitle");
 const roomCode = document.querySelector("#roomCode");
 const inviteLink = document.querySelector("#inviteLink");
 const copyInviteButton = document.querySelector("#copyInviteButton");
+const roomSettingsPanel = document.querySelector("#roomSettingsPanel");
+const roomTitleInput = document.querySelector("#roomTitleInput");
+const roomPrivacyInput = document.querySelector("#roomPrivacyInput");
+const roomMaxPlayersInput = document.querySelector("#roomMaxPlayersInput");
+const saveRoomSettingsButton = document.querySelector("#saveRoomSettingsButton");
 const readyButton = document.querySelector("#readyButton");
 const startButton = document.querySelector("#startButton");
 const restartButton = document.querySelector("#restartButton");
 const turnButton = document.querySelector("#turnButton");
+const leaveRoomButton = document.querySelector("#leaveRoomButton");
+const archiveRoomButton = document.querySelector("#archiveRoomButton");
 const message = document.querySelector("#message");
 const players = document.querySelector("#players");
 const board = document.querySelector("#board");
@@ -80,7 +100,36 @@ registerForm.addEventListener("submit", async (event) => {
       }
     });
     await setUser(data.user);
+    showDevAuthHint(data.emailVerification, "Ссылка подтверждения email");
     showLobby();
+  });
+});
+
+resetRequestForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  runAction(async () => {
+    const data = await api("/api/auth/request-password-reset", {
+      method: "POST",
+      body: { email: document.querySelector("#resetEmail").value }
+    });
+    showDevAuthHint(data.passwordReset, "Ссылка сброса пароля");
+    roomBadge.textContent = "Если email найден, ссылка подготовлена.";
+  });
+});
+
+resetPasswordForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  runAction(async () => {
+    await api("/api/auth/reset-password", {
+      method: "POST",
+      body: {
+        token: document.querySelector("#resetToken").value,
+        nextPassword: document.querySelector("#resetPassword").value
+      }
+    });
+    document.querySelector("#resetToken").value = "";
+    document.querySelector("#resetPassword").value = "";
+    roomBadge.textContent = "Пароль обновлён. Можно войти.";
   });
 });
 
@@ -93,6 +142,54 @@ profileForm.addEventListener("submit", async (event) => {
     });
     await setUser(data.user);
     message.textContent = "Профиль сохранён.";
+  });
+});
+
+verifyEmailForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  runAction(async () => {
+    const data = await api("/api/auth/verify-email", {
+      method: "POST",
+      body: { token: document.querySelector("#verifyEmailToken").value }
+    });
+    if (data.user) {
+      await setUser(data.user);
+    }
+    document.querySelector("#verifyEmailToken").value = "";
+    roomBadge.textContent = "Email подтверждён.";
+  });
+});
+
+changePasswordForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  runAction(async () => {
+    await api("/api/auth/change-password", {
+      method: "POST",
+      body: {
+        currentPassword: document.querySelector("#currentPassword").value,
+        nextPassword: document.querySelector("#newPassword").value
+      }
+    });
+    document.querySelector("#currentPassword").value = "";
+    document.querySelector("#newPassword").value = "";
+    roomBadge.textContent = "Пароль изменён.";
+  });
+});
+
+resendVerificationButton.addEventListener("click", async () => {
+  runAction(async () => {
+    const data = await api("/api/auth/resend-verification", { method: "POST" });
+    showDevAuthHint(data.emailVerification, data.alreadyVerified ? "Email уже подтверждён" : "Ссылка подтверждения email");
+    await refreshMe();
+  });
+});
+
+logoutAllButton.addEventListener("click", async () => {
+  runAction(async () => {
+    await api("/api/auth/logout-all", { method: "POST" });
+    clearSession();
+    state.user = null;
+    showAuth();
   });
 });
 
@@ -115,7 +212,7 @@ homeNav.addEventListener("click", (event) => {
 
 roomsNav.addEventListener("click", (event) => {
   event.preventDefault();
-  showProfile();
+  runAction(showRooms);
 });
 
 profileNav.addEventListener("click", (event) => {
@@ -128,7 +225,16 @@ createForm.addEventListener("submit", async (event) => {
   runAction(async () => {
     const name = document.querySelector("#createName").value.trim();
     const professionId = document.querySelector("#createProfession").value;
-    const data = await api("/api/rooms", { method: "POST", body: { name, professionId } });
+    const data = await api("/api/rooms", {
+      method: "POST",
+      body: {
+        name,
+        professionId,
+        title: document.querySelector("#createRoomTitle").value.trim(),
+        privacy: document.querySelector("#createRoomPrivacy").value,
+        maxPlayers: Number(document.querySelector("#createMaxPlayers").value)
+      }
+    });
     await enterRoom(data.roomCode, data.playerId, data.game);
   });
 });
@@ -172,6 +278,61 @@ restartButton.addEventListener("click", async () => {
       body: { playerId: state.playerId }
     });
     await setGame(data.game);
+  });
+});
+
+refreshRoomsButton.addEventListener("click", async () => {
+  runAction(loadRoomsBrowser);
+});
+
+saveRoomSettingsButton.addEventListener("click", async () => {
+  runAction(async () => {
+    const data = await api(`/api/rooms/${state.roomCode}/settings`, {
+      method: "POST",
+      body: {
+        playerId: state.playerId,
+        title: roomTitleInput.value,
+        privacy: roomPrivacyInput.value,
+        maxPlayers: Number(roomMaxPlayersInput.value)
+      }
+    });
+    await setGame(data.game);
+  });
+});
+
+leaveRoomButton.addEventListener("click", async () => {
+  runAction(async () => {
+    const data = await api(`/api/rooms/${state.roomCode}/leave`, {
+      method: "POST",
+      body: { playerId: state.playerId, spectatorId: state.spectatorId }
+    });
+    clearRoomSession();
+    state.game = null;
+    state.roomCode = null;
+    state.playerId = null;
+    state.spectatorId = null;
+    await refreshMe();
+    await showRooms();
+    if (data.game?.archivedAt) {
+      roomBadge.textContent = "Комната архивирована.";
+    }
+  });
+});
+
+archiveRoomButton.addEventListener("click", async () => {
+  runAction(async () => {
+    await api(`/api/rooms/${state.roomCode}/archive`, {
+      method: "POST",
+      body: { playerId: state.playerId }
+    });
+    clearRoomSession();
+    state.game = null;
+    state.roomCode = null;
+    state.playerId = null;
+    state.spectatorId = null;
+    await refreshMe();
+    await showRooms();
+    roomBadge.textContent = "Комната архивирована.";
   });
 });
 
@@ -229,7 +390,7 @@ async function init() {
       return;
     }
 
-    if (state.roomCode && state.playerId) {
+    if (state.roomCode && (state.playerId || state.spectatorId)) {
       try {
         await refreshGame();
         connectRealtime();
@@ -268,8 +429,22 @@ async function ensureRulesLoaded() {
 async function enterRoom(code, playerId, game) {
   state.roomCode = code;
   state.playerId = playerId;
+  state.spectatorId = null;
   localStorage.setItem("meshok.roomCode", code);
   localStorage.setItem("meshok.playerId", playerId);
+  localStorage.removeItem("meshok.spectatorId");
+  await refreshMe();
+  await setGame(game);
+  connectRealtime();
+}
+
+async function enterSpectatorRoom(code, spectatorId, game) {
+  state.roomCode = code;
+  state.playerId = null;
+  state.spectatorId = spectatorId;
+  localStorage.setItem("meshok.roomCode", code);
+  localStorage.removeItem("meshok.playerId");
+  localStorage.setItem("meshok.spectatorId", spectatorId);
   await setGame(game);
   connectRealtime();
 }
@@ -288,13 +463,19 @@ async function setUser(user) {
   renderProfile();
 }
 
+async function refreshMe() {
+  const session = await api("/api/me");
+  await setUser(session.user);
+}
+
 async function setGame(game) {
   await ensureRulesLoaded();
   state.game = game;
-  if (state.playerId && !myPlayer()) {
-    clearSession();
+  if ((state.playerId && !myPlayer()) || (state.spectatorId && !mySpectator())) {
+    clearRoomSession();
     state.roomCode = null;
     state.playerId = null;
+    state.spectatorId = null;
     state.game = null;
     setupPanel.classList.remove("hidden");
     gamePanel.classList.add("hidden");
@@ -303,9 +484,13 @@ async function setGame(game) {
   }
   setupPanel.classList.add("hidden");
   gamePanel.classList.remove("hidden");
-  roomBadge.textContent = `Комната ${game.roomCode}`;
+  roomBadge.textContent = `${game.privacy === "public" ? "Публичная" : "Приватная"} · ${game.status}`;
+  roomTitle.textContent = game.title || `Комната ${game.roomCode}`;
   roomCode.textContent = game.roomCode;
   inviteLink.value = inviteUrl();
+  roomTitleInput.value = game.title || `Комната ${game.roomCode}`;
+  roomPrivacyInput.value = game.privacy || "private";
+  roomMaxPlayersInput.value = String(game.maxPlayers || 4);
   renderPlayers();
   renderBoard();
   renderLog();
@@ -354,10 +539,24 @@ function showProfile() {
   setActiveNav(profileNav);
 }
 
+async function showRooms() {
+  if (!state.user) {
+    showAuth();
+    return;
+  }
+  hideAllPanels();
+  authPanel.classList.add("hidden");
+  roomsPanel.classList.remove("hidden");
+  roomBadge.textContent = "Комнаты";
+  setActiveNav(roomsNav);
+  await loadRoomsBrowser();
+}
+
 function hideAllPanels() {
   authPanel.classList.add("hidden");
   setupPanel.classList.add("hidden");
   profilePanel.classList.add("hidden");
+  roomsPanel.classList.add("hidden");
   gamePanel.classList.add("hidden");
 }
 
@@ -370,6 +569,10 @@ function renderProfile() {
     return;
   }
   const stats = state.user.stats || {};
+  emailStatus.textContent = state.user.emailVerified
+    ? `Email подтверждён${state.user.emailVerifiedAt ? `: ${formatDate(state.user.emailVerifiedAt)}` : "."}`
+    : "Email пока не подтверждён.";
+  resendVerificationButton.disabled = Boolean(state.user.emailVerified);
   profileStats.innerHTML = `
     <span>Игр<strong>${stats.games || 0}</strong></span>
     <span>Побед<strong>${stats.wins || 0}</strong></span>
@@ -399,14 +602,119 @@ function renderProfile() {
       runAction(async () => {
         state.roomCode = button.dataset.room;
         state.playerId = button.dataset.player;
+        state.spectatorId = null;
         localStorage.setItem("meshok.roomCode", state.roomCode);
         localStorage.setItem("meshok.playerId", state.playerId);
+        localStorage.removeItem("meshok.spectatorId");
         await refreshGame();
         connectRealtime();
         showLobby();
       });
     });
   });
+}
+
+async function loadRoomsBrowser() {
+  const data = await api("/api/rooms");
+  renderRoomsBrowser(data.rooms || []);
+}
+
+function renderRoomsBrowser(roomItems) {
+  const publicRooms = roomItems.filter((room) => room.privacy === "public");
+  const myRooms = roomItems.filter((room) => room.isPlayer || room.isSpectator);
+  publicRoomsList.innerHTML = renderRoomList(publicRooms, "Публичных комнат пока нет");
+  myRoomsList.innerHTML = renderRoomList(myRooms, "Ваших активных комнат пока нет");
+
+  roomsPanel.querySelectorAll("[data-room-action]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const roomCodeValue = button.dataset.roomCode;
+      const action = button.dataset.roomAction;
+      const playerId = button.dataset.playerId;
+      const spectatorId = button.dataset.spectatorId;
+      runAction(async () => {
+        if (action === "open-player") {
+          state.roomCode = roomCodeValue;
+          state.playerId = playerId;
+          state.spectatorId = null;
+          localStorage.setItem("meshok.roomCode", state.roomCode);
+          localStorage.setItem("meshok.playerId", state.playerId);
+          localStorage.removeItem("meshok.spectatorId");
+          await refreshGame();
+          connectRealtime();
+          showLobby();
+          return;
+        }
+        if (action === "open-spectator") {
+          state.roomCode = roomCodeValue;
+          state.playerId = null;
+          state.spectatorId = spectatorId;
+          localStorage.setItem("meshok.roomCode", state.roomCode);
+          localStorage.removeItem("meshok.playerId");
+          localStorage.setItem("meshok.spectatorId", state.spectatorId);
+          await refreshGame();
+          connectRealtime();
+          showLobby();
+          return;
+        }
+        if (action === "join") {
+          const name = document.querySelector("#joinName").value.trim() || state.user.name;
+          const professionId = document.querySelector("#joinProfession").value;
+          const data = await api(`/api/rooms/${roomCodeValue}/join`, { method: "POST", body: { name, professionId } });
+          await enterRoom(roomCodeValue, data.playerId, data.game);
+          return;
+        }
+        const data = await api(`/api/rooms/${roomCodeValue}/spectate`, {
+          method: "POST",
+          body: { name: state.user.name }
+        });
+        await enterSpectatorRoom(roomCodeValue, data.spectatorId, data.game);
+      });
+    });
+  });
+}
+
+function renderRoomList(roomItems, emptyText) {
+  if (!roomItems.length) {
+    return `<li class="room-list-empty">${emptyText}</li>`;
+  }
+  return roomItems.map((room) => {
+    const canJoin = room.status === "lobby" && room.playerCount < room.maxPlayers && !room.isPlayer && !room.isSpectator;
+    const openAction = room.isPlayer
+      ? `<button class="mini-button" data-room-action="open-player" data-room-code="${escapeHtml(room.roomCode)}" data-player-id="${escapeHtml(room.playerId || "")}">Открыть</button>`
+      : room.isSpectator
+        ? `<button class="mini-button" data-room-action="open-spectator" data-room-code="${escapeHtml(room.roomCode)}" data-spectator-id="${escapeHtml(room.spectatorId || "")}">Открыть</button>`
+        : "";
+    const joinAction = canJoin
+      ? `<button class="mini-button" data-room-action="join" data-room-code="${escapeHtml(room.roomCode)}">Играть</button>`
+      : "";
+    const spectateAction = !room.isPlayer && !room.isSpectator
+      ? `<button class="mini-button secondary" data-room-action="spectate" data-room-code="${escapeHtml(room.roomCode)}">Смотреть</button>`
+      : "";
+    return `
+      <li class="room-list-item">
+        <div>
+          <strong>${escapeHtml(room.title)}</strong>
+          <span>${escapeHtml(room.roomCode)} · ${room.privacy === "public" ? "публичная" : "приватная"} · ${escapeHtml(room.status)}</span>
+          <small>${room.playerCount}/${room.maxPlayers} игроков · ${room.spectatorCount} зрителей · хост ${escapeHtml(room.host)}</small>
+        </div>
+        <div class="room-list-actions">${openAction}${joinAction}${spectateAction}</div>
+      </li>
+    `;
+  }).join("");
+}
+
+function showDevAuthHint(payload, title) {
+  if (!payload) {
+    return;
+  }
+  const text = payload.url || payload.token || title;
+  roomBadge.textContent = text;
+  if (payload.token && title.includes("подтверждения")) {
+    document.querySelector("#verifyEmailToken").value = payload.token;
+  }
+  if (payload.token && title.includes("сброса")) {
+    document.querySelector("#resetToken").value = payload.token;
+  }
 }
 
 function renderPlayers() {
@@ -425,12 +733,15 @@ function renderPlayers() {
     const kickButton = isHost && player.id !== state.game.hostId && state.game.status === "lobby"
       ? `<button class="mini-button secondary" data-kick="${escapeHtml(player.id)}">Кик</button>`
       : "";
+    const transferButton = isHost && player.id !== state.game.hostId
+      ? `<button class="mini-button secondary" data-transfer-host="${escapeHtml(player.id)}">Хост</button>`
+      : "";
     card.innerHTML = `
       <div class="player-name">
         <span>${escapeHtml(player.name)}</span>
         <span>${player.lastRoll ? `D6 ${player.lastRoll}` : ""}</span>
       </div>
-      <div class="player-flags">${hostMark}${readyMark}${kickButton}</div>
+      <div class="player-flags">${hostMark}${readyMark}${transferButton}${kickButton}</div>
       <div class="profession">${escapeHtml(player.profession || "Профессия")} · ${player.track === "project-league" ? "Лига проектов" : "Денежный двор"}</div>
       ${player.track === "project-league" ? `<div class="goal-line">Цель: ${escapeHtml(player.grandGoal?.title || "проект")}</div>` : ""}
       <div class="stats">
@@ -449,12 +760,37 @@ function renderPlayers() {
     players.append(card);
   });
 
+  if (state.game.spectators?.length) {
+    const list = document.createElement("article");
+    list.className = "spectator-card";
+    list.innerHTML = `
+      <div class="player-name">
+        <span>Наблюдатели</span>
+        <span>${state.game.spectators.length}</span>
+      </div>
+      <div class="spectator-list">${state.game.spectators.map((item) => `<span>${escapeHtml(item.name)}</span>`).join("")}</div>
+    `;
+    players.append(list);
+  }
+
   players.querySelectorAll("[data-kick]").forEach((button) => {
     button.addEventListener("click", async () => {
       runAction(async () => {
         const data = await api(`/api/rooms/${state.roomCode}/kick`, {
           method: "POST",
           body: { playerId: state.playerId, targetPlayerId: button.dataset.kick }
+        });
+        await setGame(data.game);
+      });
+    });
+  });
+
+  players.querySelectorAll("[data-transfer-host]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      runAction(async () => {
+        const data = await api(`/api/rooms/${state.roomCode}/transfer-host`, {
+          method: "POST",
+          body: { playerId: state.playerId, targetPlayerId: button.dataset.transferHost }
         });
         await setGame(data.game);
       });
@@ -836,19 +1172,37 @@ function updateControls() {
   const game = state.game;
   const me = myPlayer();
   const isHost = me?.id === game.hostId;
+  const isSpectator = Boolean(mySpectator());
   const isMyTurn = game.currentPlayerId === state.playerId;
   const hasPendingDeal = Boolean(me?.pendingOpportunity || me?.pendingOpportunityChoice || me?.pendingMarketOffer || me?.pendingProjectDeal);
   const notReadyPlayers = game.players.filter((player) => player.id !== game.hostId && !player.ready);
 
-  readyButton.classList.toggle("hidden", game.status !== "lobby" || isHost);
+  roomSettingsPanel.classList.toggle("hidden", !isHost || Boolean(game.archivedAt));
+  saveRoomSettingsButton.disabled = !isHost || Boolean(game.archivedAt);
+  archiveRoomButton.classList.toggle("hidden", !isHost || Boolean(game.archivedAt));
+  leaveRoomButton.classList.toggle("hidden", Boolean(game.archivedAt));
+  readyButton.classList.toggle("hidden", game.status !== "lobby" || isHost || isSpectator);
   readyButton.textContent = me?.ready ? "Не готов" : "Готов";
-  readyButton.disabled = game.status !== "lobby" || isHost;
+  readyButton.disabled = game.status !== "lobby" || isHost || isSpectator;
   startButton.classList.toggle("hidden", !isHost || game.status !== "lobby");
   startButton.disabled = game.status !== "lobby" || !isHost || notReadyPlayers.length > 0;
   restartButton.classList.toggle("hidden", !isHost || game.status !== "finished");
   restartButton.disabled = game.status !== "finished" || !isHost;
-  turnButton.disabled = game.status !== "playing" || !isMyTurn || hasPendingDeal;
-  turnButton.classList.toggle("hidden", game.status === "finished");
+  turnButton.disabled = isSpectator || game.status !== "playing" || !isMyTurn || hasPendingDeal;
+  turnButton.classList.toggle("hidden", game.status === "finished" || isSpectator);
+  chatInput.disabled = isSpectator || Boolean(game.archivedAt);
+  chatForm.querySelector("button").disabled = isSpectator || Boolean(game.archivedAt);
+
+  if (game.archivedAt) {
+    message.textContent = "Комната архивирована.";
+    return;
+  }
+
+  if (isSpectator) {
+    const current = game.players.find((player) => player.id === game.currentPlayerId);
+    message.textContent = game.status === "playing" ? `Режим наблюдателя. Ход игрока ${current?.name || "..."}.` : "Режим наблюдателя.";
+    return;
+  }
 
   if (game.status === "lobby") {
     message.textContent = isHost
@@ -938,6 +1292,10 @@ function myPlayer() {
   return state.game?.players.find((player) => player.id === state.playerId);
 }
 
+function mySpectator() {
+  return state.game?.spectators?.find((spectator) => spectator.id === state.spectatorId);
+}
+
 function inviteUrl() {
   const url = new URL(window.location.href);
   url.searchParams.set("room", state.roomCode || "");
@@ -959,6 +1317,7 @@ function clearSession() {
   state.game = null;
   localStorage.removeItem("meshok.roomCode");
   localStorage.removeItem("meshok.playerId");
+  localStorage.removeItem("meshok.spectatorId");
   if (state.eventSource) {
     state.eventSource.close();
   }
@@ -968,8 +1327,10 @@ function clearSession() {
 function clearRoomSession() {
   localStorage.removeItem("meshok.roomCode");
   localStorage.removeItem("meshok.playerId");
+  localStorage.removeItem("meshok.spectatorId");
   state.roomCode = null;
   state.playerId = null;
+  state.spectatorId = null;
   if (state.eventSource) {
     state.eventSource.close();
     state.eventSource = null;

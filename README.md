@@ -47,7 +47,27 @@ npm run db:up
 postgres://cashflow:cashflow@localhost:15432/cashflow_online
 ```
 
-При запуске сервер сам применяет схему из `backend/schema.sql`.
+При запуске сервер сам применяет миграции из `backend/migrations/`.
+
+Проверить состояние сервера и базы можно через:
+
+```text
+http://localhost:3000/api/health
+```
+
+Для auth endpoints включён простой rate limit. Настройки по умолчанию:
+
+```env
+AUTH_RATE_WINDOW_MS=60000
+AUTH_RATE_MAX=12
+SESSION_MAX_AGE_MS=2592000000
+SESSION_IDLE_MS=604800000
+EMAIL_TOKEN_TTL_MS=86400000
+PASSWORD_RESET_TTL_MS=3600000
+EMAIL_DEV_MODE=true
+```
+
+В dev-режиме ссылки подтверждения email и сброса пароля возвращаются в ответе API, чтобы их можно было тестировать без SMTP-провайдера. Для production нужно подключить отправку email и выставить `EMAIL_DEV_MODE=false`.
 
 ```bash
 npm start
@@ -86,7 +106,8 @@ npm test
 
 - `backend/server.js` - HTTP-сервер, API комнат и раздача frontend.
 - `backend/db.js` - подключение к Postgres и запросы хранения.
-- `backend/schema.sql` - схема таблиц Postgres.
+- `backend/migrations/` - версионированные SQL-миграции Postgres.
+- `backend/schema.sql` - снимок текущей схемы Postgres.
 - `frontend/index.html` - разметка лобби и игрового экрана.
 - `frontend/app.js` - клиентская логика и обновление интерфейса.
 - `frontend/styles.css` - тёмная UI-тема.

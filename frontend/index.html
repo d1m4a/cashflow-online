@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Мешок Деняк</title>
-    <link rel="stylesheet" href="/styles.css?v=meshok-denyak-3">
+    <link rel="stylesheet" href="/styles.css?v=meshok-denyak-4">
   </head>
   <body>
     <main class="app-shell">
@@ -49,6 +49,16 @@
             <button type="submit">Войти</button>
           </form>
 
+          <form id="resetRequestForm" class="setup-card">
+            <div class="setup-icon">KEY</div>
+            <h2>Восстановить пароль</h2>
+            <label>
+              Email
+              <input id="resetEmail" name="email" type="email" maxlength="120" required>
+            </label>
+            <button type="submit">Получить ссылку</button>
+          </form>
+
           <form id="registerForm" class="setup-card">
             <div class="setup-icon">NEW</div>
             <h2>Регистрация</h2>
@@ -71,6 +81,17 @@
             <div class="setup-icon">SAVE</div>
             <h2>Профиль</h2>
             <p>Аккаунт хранит имя игрока, комнаты, историю партий и личную статистику.</p>
+            <form id="resetPasswordForm" class="inline-auth-form">
+              <label>
+                Токен сброса
+                <input id="resetToken" maxlength="160">
+              </label>
+              <label>
+                Новый пароль
+                <input id="resetPassword" type="password" minlength="6">
+              </label>
+              <button type="submit" class="secondary">Сбросить пароль</button>
+            </form>
           </article>
         </div>
       </section>
@@ -97,6 +118,32 @@
             <div class="report-grid" id="profileStats"></div>
           </article>
           <article class="profile-card">
+            <h2>Безопасность</h2>
+            <p id="emailStatus" class="profile-note"></p>
+            <div class="security-actions">
+              <button id="resendVerificationButton" type="button" class="secondary">Подтвердить email</button>
+              <button id="logoutAllButton" type="button" class="secondary">Выйти везде</button>
+            </div>
+            <form id="verifyEmailForm" class="inline-auth-form">
+              <label>
+                Токен подтверждения
+                <input id="verifyEmailToken" maxlength="160">
+              </label>
+              <button type="submit">Подтвердить</button>
+            </form>
+            <form id="changePasswordForm" class="inline-auth-form">
+              <label>
+                Текущий пароль
+                <input id="currentPassword" type="password" minlength="6">
+              </label>
+              <label>
+                Новый пароль
+                <input id="newPassword" type="password" minlength="6">
+              </label>
+              <button type="submit">Сменить пароль</button>
+            </form>
+          </article>
+          <article class="profile-card">
             <h2>Сохранённые комнаты</h2>
             <ul class="profile-list" id="profileRooms"></ul>
           </article>
@@ -120,6 +167,26 @@
             <div class="setup-icon">P2P</div>
             <h2>Создать комнату</h2>
             <p>Создайте свою комнату и пригласите друзей.</p>
+            <label>
+              Название
+              <input id="createRoomTitle" name="title" maxlength="40" placeholder="Вечерняя партия">
+            </label>
+            <label>
+              Приватность
+              <select id="createRoomPrivacy" name="privacy">
+                <option value="public">Публичная</option>
+                <option value="private">Приватная</option>
+              </select>
+            </label>
+            <label>
+              Лимит игроков
+              <select id="createMaxPlayers" name="maxPlayers">
+                <option value="4">4 игрока</option>
+                <option value="3">3 игрока</option>
+                <option value="2">2 игрока</option>
+                <option value="1">1 игрок</option>
+              </select>
+            </label>
             <label>
               Имя
               <input id="createName" name="name" maxlength="24" placeholder="Например, Дмитрий" required>
@@ -160,19 +227,65 @@
         </div>
       </section>
 
+      <section class="panel setup-panel hidden" id="roomsPanel">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Комнаты</p>
+            <h1>Игровые комнаты</h1>
+          </div>
+          <button id="refreshRoomsButton" type="button" class="mini-button secondary">Обновить</button>
+        </div>
+        <div class="rooms-browser">
+          <article class="room-list-block">
+            <h2>Доступные</h2>
+            <ul class="room-list" id="publicRoomsList"></ul>
+          </article>
+          <article class="room-list-block">
+            <h2>Мои комнаты</h2>
+            <ul class="room-list" id="myRoomsList"></ul>
+          </article>
+        </div>
+      </section>
+
       <section class="game-layout hidden" id="gamePanel">
         <aside class="panel sidebar glass-panel">
           <div class="stack room-stack">
             <div>
               <p class="eyebrow">Комната</p>
+              <div class="room-title" id="roomTitle">Комната</div>
               <div class="room-code" id="roomCode">-----</div>
             </div>
             <input id="inviteLink" readonly aria-label="Ссылка-приглашение">
             <button id="copyInviteButton" type="button" class="secondary">Ссылка-приглашение</button>
+            <div class="room-settings" id="roomSettingsPanel">
+              <label>
+                Название
+                <input id="roomTitleInput" maxlength="40">
+              </label>
+              <label>
+                Приватность
+                <select id="roomPrivacyInput">
+                  <option value="public">Публичная</option>
+                  <option value="private">Приватная</option>
+                </select>
+              </label>
+              <label>
+                Лимит
+                <select id="roomMaxPlayersInput">
+                  <option value="4">4</option>
+                  <option value="3">3</option>
+                  <option value="2">2</option>
+                  <option value="1">1</option>
+                </select>
+              </label>
+              <button id="saveRoomSettingsButton" type="button" class="secondary">Сохранить комнату</button>
+            </div>
             <button id="readyButton" type="button" class="secondary">Готов</button>
             <button id="startButton" type="button">Начать игру</button>
             <button id="restartButton" type="button" class="secondary hidden">Новая игра</button>
             <button id="turnButton" type="button">Бросить кубик</button>
+            <button id="leaveRoomButton" type="button" class="secondary">Покинуть комнату</button>
+            <button id="archiveRoomButton" type="button" class="secondary hidden">Архивировать</button>
             <div class="message" id="message"></div>
           </div>
 
@@ -213,6 +326,6 @@
       </section>
     </main>
 
-    <script src="/app.js?v=meshok-denyak-3"></script>
+    <script src="/app.js?v=meshok-denyak-4"></script>
   </body>
 </html>
