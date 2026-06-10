@@ -7,6 +7,7 @@ const {
   startGame,
   restartGame,
   kickPlayer,
+  takeTurn,
   drawOpportunity,
   buyOpportunity,
   passOpportunityChoice,
@@ -16,7 +17,8 @@ const {
   buyProjectDeal,
   passProjectDeal,
   serializeGame,
-  serializeRules
+  serializeRules,
+  validateGameState
 } = require("../shared/gameRules");
 
 function makeStartedGame(professionId = "event-host") {
@@ -304,6 +306,8 @@ test("serialized rules expose board cells and profession setup data", () => {
   assert.equal(rules.boardSize, rules.cells.length);
   assert.ok(rules.projectCells.length > 0);
   assert.ok(rules.grandGoals.length > 0);
+  assert.ok(rules.gameLengths.some((item) => item.id === "quick" && item.maxTurns > 0));
+  assert.ok(rules.victoryModes.some((item) => item.id === "netWorth"));
   assert.equal(typeof rules.projectIncomeGoal, "number");
   assert.equal(typeof rules.projectPortfolioGoal, "number");
   assert.equal(typeof rules.reputationGoal, "number");
@@ -324,6 +328,7 @@ test("starter professions keep distinct but playable money profiles", () => {
   assert.ok(lowestSurplus >= 800);
   assert.ok(highestSurplus - lowestSurplus >= 250);
   assert.ok(lowestCash >= 1000);
+  assert.ok(rules.professions.length >= 10);
   assert.ok(rules.professions.every((profession) => profession.liabilities.length >= 1));
 });
 
@@ -350,4 +355,117 @@ test("serialized multiplayer state keeps money-yard and project-league players v
   assert.equal(bobState.position, 5);
   assert.ok(rules.cells.length > 0);
   assert.ok(rules.projectCells.length > 0);
+});
+
+test("game settings support turn-limit net worth victory", () => {
+  const game = createGame("LIMIT", "Alice", "event-host", null, {
+    gameLength: "quick",
+    victoryMode: "netWorth",
+    maxTurns: 1
+  });
+  startGame(game, game.hostId);
+  const player = game.players[0];
+  player.cash = 50_000;
+  player.skippedTurns = 1;
+
+  takeTurn(game, player.id);
+
+  assert.equal(game.status, "finished");
+  assert.equal(game.winnerId, player.id);
+  assert.equal(game.finishReason, "turn-limit");
+  assert.equal(game.turnCount, 1);
+});
+
+test("victory modes can disable portfolio or goal wins", () => {
+  const goalOnly = createGame("GOAL1", "Alice", "event-host", null, { victoryMode: "goal" });
+  startGame(goalOnly, goalOnly.hostId);
+  const goalPlayer = goalOnly.players[0];
+  goalPlayer.track = "project-league";
+  goalPlayer.projectIncome = 7_000;
+  goalPlayer.assets = [
+    { id: "p1", title: "P1", type: "project-league", passiveIncome: 2500 },
+    { id: "p2", title: "P2", type: "project-league", passiveIncome: 2500 },
+    { id: "p3", title: "P3", type: "project-league", passiveIncome: 2500 }
+  ];
+  goalPlayer.pendingProjectDeal = {
+    id: "extra",
+    title: "Extra",
+    text: "Extra project",
+    cost: 1,
+    marketValue: 1,
+    upkeep: 0,
+    passiveIncome: 1
+  };
+  goalPlayer.cash = 1;
+
+  buyProjectDeal(goalOnly, goalPlayer.id);
+
+  assert.equal(goalOnly.status, "playing");
+
+  const portfolioOnly = createGame("PORT1", "Alice", "event-host", null, { victoryMode: "portfolio" });
+  startGame(portfolioOnly, portfolioOnly.hostId);
+  const portfolioPlayer = portfolioOnly.players[0];
+  portfolioPlayer.track = "project-league";
+  portfolioPlayer.cash = portfolioPlayer.grandGoal.cost;
+
+  assert.throws(() => buyGrandGoal(portfolioOnly, portfolioPlayer.id), /отключена/);
+  assert.equal(portfolioOnly.status, "playing");
+});
+
+test("rules reject impossible pending decisions before a turn", () => {
+  const game = makeStartedGame();
+  const player = game.players[0];
+  player.pendingOpportunityChoice = true;
+
+  assert.throws(() => takeTurn(game, player.id), /завершите текущее решение/);
+});
+
+test("validateGameState catches corrupted state and debug log records replay events", () => {
+  const game = makeStartedGame();
+  const player = game.players[0];
+
+  validateGameState(game);
+  takeTurn(game, player.id);
+
+  assert.ok(serializeGame(game).debugLog.some((item) => item.type === "turn.roll"));
+
+  game.players.push({ ...player });
+  assert.throws(() => validateGameState(game), /Некорректное состояние игроков/);
+});
+
+test("financial stress can force liquidation before bankruptcy", () => {
+  const game = makeStartedGame();
+  const player = game.players[0];
+  player.cash = -10_000;
+  player.assets.push({
+    id: "stress-asset",
+    title: "Стрессовый актив",
+    type: "large",
+    cost: 3000,
+    downPayment: 1000,
+    loan: 0,
+    payment: 0,
+    marketValue: 5000,
+    passiveIncome: 500
+  });
+  player.passiveIncome = 500;
+
+  takeTurn(game, player.id);
+
+  assert.equal(player.assets.some((asset) => asset.id === "stress-asset"), false);
+  assert.ok(serializeGame(game).debugLog.some((item) => item.type === "debt.asset-liquidation"));
+});
+
+test("deep negative cash triggers restructuring and bankruptcy guardrails", () => {
+  const game = makeStartedGame("logistics-analyst");
+  const player = game.players[0];
+  player.cash = -50_000;
+
+  takeTurn(game, player.id);
+
+  assert.equal(player.cash, 0);
+  assert.equal(player.bankruptcyCount, 1);
+  assert.ok(player.skippedTurns >= 1);
+  assert.ok(player.liabilities.some((liability) => liability.restructured));
+  assert.ok(serializeGame(game).debugLog.some((item) => item.type === "debt.bankruptcy"));
 });

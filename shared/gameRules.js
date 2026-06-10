@@ -4,6 +4,17 @@ const PROJECT_INCOME_GOAL = 6200;
 const PROJECT_PORTFOLIO_GOAL = 3;
 const REPUTATION_GOAL = 5;
 const RESERVE_MONTHS_GOAL = 2;
+const GAME_LENGTHS = {
+  quick: { title: "Быстрая", maxTurns: 36 },
+  standard: { title: "Стандартная", maxTurns: 72 },
+  open: { title: "Без лимита", maxTurns: null }
+};
+const VICTORY_MODES = {
+  classic: { title: "Классика" },
+  goal: { title: "Большая цель" },
+  portfolio: { title: "Портфель проектов" },
+  netWorth: { title: "Капитал к лимиту ходов" }
+};
 
 const PROFESSIONS = [
   {
@@ -32,10 +43,10 @@ const PROFESSIONS = [
     title: "Техник лаборатории",
     salary: 4550,
     expenses: 3220,
-    cash: 2100,
+    cash: 2400,
     liabilities: [
-      { title: "Семейный заём", payment: 340, balance: 9800 },
-      { title: "Рассрочка на ноутбук", payment: 210, balance: 4700 }
+      { title: "Семейный заём", payment: 300, balance: 7600 },
+      { title: "Рассрочка на ноутбук", payment: 180, balance: 3900 }
     ]
   },
   {
@@ -53,9 +64,62 @@ const PROFESSIONS = [
     title: "Редактор контента",
     salary: 3350,
     expenses: 2300,
-    cash: 1600,
+    cash: 1400,
     liabilities: [
-      { title: "Карта с лимитом", payment: 210, balance: 4800 }
+      { title: "Карта с лимитом", payment: 260, balance: 7200 }
+    ]
+  },
+  {
+    id: "clinic-admin",
+    title: "Администратор клиники",
+    salary: 4200,
+    expenses: 2940,
+    cash: 2200,
+    liabilities: [
+      { title: "Кредит на ремонт", payment: 250, balance: 6100 },
+      { title: "Потребительский долг", payment: 160, balance: 3300 }
+    ]
+  },
+  {
+    id: "junior-developer",
+    title: "Младший разработчик",
+    salary: 5200,
+    expenses: 3820,
+    cash: 3000,
+    liabilities: [
+      { title: "Рассрочка на технику", payment: 210, balance: 4800 },
+      { title: "Образовательный кредит", payment: 260, balance: 6800 }
+    ]
+  },
+  {
+    id: "cafe-manager",
+    title: "Управляющий кафе",
+    salary: 4650,
+    expenses: 3360,
+    cash: 2600,
+    liabilities: [
+      { title: "Автокредит", payment: 310, balance: 9800 }
+    ]
+  },
+  {
+    id: "design-freelancer",
+    title: "Дизайнер-фрилансер",
+    salary: 4100,
+    expenses: 2860,
+    cash: 1900,
+    liabilities: [
+      { title: "Карта за отпуск", payment: 330, balance: 9800 }
+    ]
+  },
+  {
+    id: "logistics-analyst",
+    title: "Аналитик логистики",
+    salary: 5600,
+    expenses: 4180,
+    cash: 3500,
+    liabilities: [
+      { title: "Ипотечный платёж", payment: 420, balance: 12200 },
+      { title: "Кредитная карта", payment: 150, balance: 3200 }
     ]
   }
 ];
@@ -176,6 +240,114 @@ const OPPORTUNITY_CARDS = [
     payment: 430,
     marketValue: 7600,
     passiveIncome: 980
+  },
+  {
+    id: "coffee-cart",
+    type: "small",
+    title: "Кофейная тележка",
+    text: "Утренняя точка у бизнес-центра с предсказуемым потоком.",
+    cost: 1650,
+    downPayment: 650,
+    loan: 1000,
+    payment: 95,
+    marketValue: 2100,
+    passiveIncome: 240
+  },
+  {
+    id: "kids-workshop",
+    type: "small",
+    title: "Детские мастер-классы",
+    text: "Набор материалов и партнёрство с локальной студией выходного дня.",
+    cost: 980,
+    downPayment: 980,
+    loan: 0,
+    payment: 0,
+    marketValue: 1250,
+    passiveIncome: 135
+  },
+  {
+    id: "printer-share",
+    type: "small",
+    title: "3D-принтер в долю",
+    text: "Часть времени станка продаётся мастерам и студентам.",
+    cost: 2100,
+    downPayment: 900,
+    loan: 1200,
+    payment: 120,
+    marketValue: 2700,
+    passiveIncome: 310
+  },
+  {
+    id: "mini-hostel-room",
+    type: "large",
+    title: "Комната под мини-хостел",
+    text: "Долгосрочная аренда и переупаковка под посуточное размещение.",
+    cost: 5200,
+    downPayment: 1900,
+    loan: 3300,
+    payment: 360,
+    marketValue: 6900,
+    passiveIncome: 860
+  },
+  {
+    id: "local-crm",
+    type: "large",
+    title: "CRM для локальных студий",
+    text: "Пакет внедрения и подписка для салонов, секций и школ.",
+    cost: 6800,
+    downPayment: 2400,
+    loan: 4400,
+    payment: 480,
+    marketValue: 8900,
+    passiveIncome: 1180
+  },
+  {
+    id: "parking-contract",
+    type: "large",
+    title: "Контракт на парковочные места",
+    text: "Пул мест у жилого комплекса сдаётся помесячно.",
+    cost: 8200,
+    downPayment: 3100,
+    loan: 5100,
+    payment: 540,
+    marketValue: 10600,
+    passiveIncome: 1450
+  },
+  {
+    id: "vending-route",
+    type: "small",
+    title: "Маршрут вендинга",
+    text: "Три небольших автомата в офисах с регулярной выкладкой.",
+    cost: 2400,
+    downPayment: 1000,
+    loan: 1400,
+    payment: 135,
+    marketValue: 3150,
+    passiveIncome: 360
+  },
+  {
+    id: "photo-booth",
+    type: "small",
+    title: "Фотобудка на события",
+    text: "Комплект оборудования сдаётся на свадьбы, маркеты и корпоративы.",
+    cost: 1850,
+    downPayment: 850,
+    loan: 1000,
+    payment: 110,
+    marketValue: 2450,
+    passiveIncome: 285
+  },
+  {
+    id: "coworking-desks",
+    type: "large",
+    title: "Мини-коворкинг на 8 мест",
+    text: "Субаренда комнаты, рабочие места и абонементы для фрилансеров.",
+    cost: 7600,
+    downPayment: 2800,
+    loan: 4800,
+    payment: 510,
+    marketValue: 9800,
+    passiveIncome: 1320
   }
 ];
 
@@ -185,7 +357,16 @@ const EXPENSE_CARDS = [
   { title: "Платный приём специалиста", amount: 560 },
   { title: "Сломался рабочий ноутбук", amount: 760 },
   { title: "Штраф за забытый документ", amount: 260 },
-  { title: "Внезапная поездка домой", amount: 420 }
+  { title: "Внезапная поездка домой", amount: 420 },
+  { title: "Ремонт телефона", amount: 380 },
+  { title: "Страховой взнос", amount: 510 },
+  { title: "Замена зимней резины", amount: 620 },
+  { title: "День рождения ребёнка", amount: 700 },
+  { title: "Срочные курсы для работы", amount: 540 },
+  { title: "Коммунальный перерасчёт", amount: 450 },
+  { title: "Юридическая консультация", amount: 680 },
+  { title: "Сломалась бытовая техника", amount: 590 },
+  { title: "Франшиза не вернула депозит", amount: 840 }
 ];
 
 const MARKET_CARDS = [
@@ -193,8 +374,17 @@ const MARKET_CARDS = [
   { kind: "cash", title: "Сезонный всплеск", amount: 420, text: "Локальный спрос вырос, свободные деньги прибавились." },
   { kind: "cash", title: "Просадка спроса", amount: -420, text: "Неделя вышла слабой, пришлось покрыть разрыв." },
   { kind: "cash", title: "Возврат переплаты", amount: 430, text: "Бухгалтерия нашла ошибку в вашу пользу." },
+  { kind: "cash", title: "Разовый заказ", amount: 680, text: "Старый клиент вернулся с быстрым заказом." },
+  { kind: "cash", title: "Падение маржи", amount: -620, text: "Поставщики подняли цены, пришлось закрыть разрыв." },
+  { kind: "cash", title: "Компенсация страховки", amount: 780, text: "Часть расходов возмещена страховой." },
+  { kind: "cash", title: "Просрочка клиента", amount: -540, text: "Платёж задержался, свободные деньги просели." },
+  { kind: "cash", title: "Рефинансирование одобрено", amount: 620, text: "Банк вернул часть комиссии после пересмотра условий." },
+  { kind: "cash", title: "Новый поставщик", amount: 360, text: "Удалось снизить закупочную цену в текущем месяце." },
+  { kind: "cash", title: "Судебный сбор", amount: -760, text: "Спор с контрагентом потребовал дополнительных расходов." },
   { kind: "asset-sale", title: "Охотник за нишами", multiplier: 1.18, text: "Покупатель ищет именно такой актив." },
-  { kind: "asset-sale", title: "Быстрая ликвидность", multiplier: 0.88, text: "Можно выйти из актива быстро, но с дисконтом." }
+  { kind: "asset-sale", title: "Быстрая ликвидность", multiplier: 0.88, text: "Можно выйти из актива быстро, но с дисконтом." },
+  { kind: "asset-sale", title: "Пик спроса", multiplier: 1.32, text: "Рынок горячий, актив можно продать дороже." },
+  { kind: "asset-sale", title: "Слабый квартал", multiplier: 0.76, text: "Покупатели давят цену, но сделка доступна сейчас." }
 ];
 
 const PROJECT_DEALS = [
@@ -233,13 +423,69 @@ const PROJECT_DEALS = [
     marketValue: 12400,
     upkeep: 470,
     passiveIncome: 2100
+  },
+  {
+    id: "solar-roofs",
+    title: "Солнечные крыши для складов",
+    text: "Договор с собственниками складов на экономию энергии и сервис.",
+    cost: 8800,
+    marketValue: 11200,
+    upkeep: 390,
+    passiveIncome: 1850
+  },
+  {
+    id: "creator-studio",
+    title: "Студия короткого видео",
+    text: "Пакетная съёмка для локальных брендов и экспертов.",
+    cost: 5400,
+    marketValue: 6900,
+    upkeep: 240,
+    passiveIncome: 1080
+  },
+  {
+    id: "neighborhood-app",
+    title: "Приложение района",
+    text: "Подписки управляющих компаний, афиша и локальные услуги.",
+    cost: 10400,
+    marketValue: 13600,
+    upkeep: 520,
+    passiveIncome: 2350
+  },
+  {
+    id: "repair-franchise",
+    title: "Франшиза ремонта техники",
+    text: "Точка с готовыми процессами, мастерами и входящими заявками.",
+    cost: 7200,
+    marketValue: 9300,
+    upkeep: 340,
+    passiveIncome: 1480
+  },
+  {
+    id: "training-platform",
+    title: "Платформа прикладных курсов",
+    text: "Записи, кураторы и корпоративные пакеты для малого бизнеса.",
+    cost: 8400,
+    marketValue: 10900,
+    upkeep: 410,
+    passiveIncome: 1760
+  },
+  {
+    id: "urban-greenhouse",
+    title: "Городская теплица",
+    text: "Контракты с кафе на зелень, микрозелень и сезонные наборы.",
+    cost: 6600,
+    marketValue: 8300,
+    upkeep: 300,
+    passiveIncome: 1320
   }
 ];
 
 const PROJECT_MARKET_CARDS = [
   { title: "Партнёрская витрина", multiplier: 1.22, text: "Покупатель готов заплатить за проект с работающей аудиторией." },
   { title: "Смена формата", multiplier: 0.92, text: "Проект можно продать быстро, но рынок просит скидку за переупаковку." },
-  { title: "Раунд роста", multiplier: 1.35, text: "Стратегический партнёр хочет купить проект как готовую точку роста." }
+  { title: "Раунд роста", multiplier: 1.35, text: "Стратегический партнёр хочет купить проект как готовую точку роста." },
+  { title: "Конкурент рядом", multiplier: 0.84, text: "Новый игрок снижает оценку проекта." },
+  { title: "Корпоративный клиент", multiplier: 1.48, text: "Крупный клиент хочет выкупить работающую систему." }
 ];
 
 function createPlayer(id, name, professionId, accountId = null) {
@@ -272,10 +518,12 @@ function normalizeRoomSettings(options = {}) {
   const rawTitle = String(options.title || "").trim();
   const rawPrivacy = String(options.privacy || "private").toLowerCase();
   const maxPlayers = Number(options.maxPlayers || 4);
+  const gameSettings = normalizeGameSettings(options.gameSettings || options);
   return {
     title: rawTitle.slice(0, 40) || `Комната ${options.roomCode || ""}`.trim(),
     privacy: rawPrivacy === "public" ? "public" : "private",
-    maxPlayers: Math.min(4, Math.max(1, Number.isFinite(maxPlayers) ? Math.floor(maxPlayers) : 4))
+    maxPlayers: Math.min(4, Math.max(1, Number.isFinite(maxPlayers) ? Math.floor(maxPlayers) : 4)),
+    gameSettings
   };
 }
 
@@ -295,6 +543,34 @@ function ensureRoomShape(game) {
   if (typeof game.archivedAt === "undefined") {
     game.archivedAt = null;
   }
+  if (!game.settings) {
+    game.settings = normalizeGameSettings(game.gameSettings || {});
+  }
+  if (!Number.isFinite(game.turnCount)) {
+    game.turnCount = 0;
+  }
+  if (!Number.isFinite(game.round)) {
+    game.round = 1;
+  }
+  if (!Array.isArray(game.debugLog)) {
+    game.debugLog = [];
+  }
+}
+
+function normalizeGameSettings(options = {}) {
+  const rawLength = String(options.gameLength || options.length || "open");
+  const rawVictory = String(options.victoryMode || "classic");
+  const lengthKey = GAME_LENGTHS[rawLength] ? rawLength : "open";
+  const victoryMode = VICTORY_MODES[rawVictory] ? rawVictory : "classic";
+  const explicitMaxTurns = Number(options.maxTurns);
+  const maxTurns = Number.isFinite(explicitMaxTurns)
+    ? Math.min(180, Math.max(1, Math.floor(explicitMaxTurns)))
+    : GAME_LENGTHS[lengthKey].maxTurns;
+  return {
+    gameLength: lengthKey,
+    victoryMode,
+    maxTurns
+  };
 }
 
 function createGame(roomCode, hostName, professionId, hostAccountId = null, options = {}) {
@@ -305,14 +581,18 @@ function createGame(roomCode, hostName, professionId, hostAccountId = null, opti
     title: settings.title,
     privacy: settings.privacy,
     maxPlayers: settings.maxPlayers,
+    settings: settings.gameSettings,
     archivedAt: null,
     status: "lobby",
     hostId: host.id,
     players: [host],
     spectators: [],
     currentPlayerIndex: 0,
+    turnCount: 0,
+    round: 1,
     winnerId: null,
     log: [`Комната ${roomCode} создана.`],
+    debugLog: [],
     chat: [],
     createdAt: Date.now(),
     updatedAt: Date.now()
@@ -384,7 +664,15 @@ function updateRoomSettings(game, hostId, settings = {}) {
   game.title = next.title;
   game.privacy = next.privacy;
   game.maxPlayers = next.maxPlayers;
+  game.settings = normalizeGameSettings({
+    ...game.settings,
+    ...(settings.gameSettings || {}),
+    gameLength: settings.gameLength ?? settings.gameSettings?.gameLength ?? game.settings.gameLength,
+    victoryMode: settings.victoryMode ?? settings.gameSettings?.victoryMode ?? game.settings.victoryMode,
+    maxTurns: settings.maxTurns ?? settings.gameSettings?.maxTurns ?? game.settings.maxTurns
+  });
   game.log.unshift("Настройки комнаты обновлены.");
+  recordDebug(game, "room.settings", { hostId, settings: game.settings });
   touch(game);
 }
 
@@ -468,10 +756,13 @@ function startGame(game, hostId) {
     throw new Error("Не все игроки готовы.");
   }
   game.status = "playing";
+  game.turnCount = 0;
+  game.round = 1;
   game.players.forEach((player) => {
     player.ready = false;
   });
   game.log.unshift("Игра началась.");
+  recordDebug(game, "game.start", { hostId, players: game.players.map((player) => player.id), settings: game.settings });
   touch(game);
 }
 
@@ -482,8 +773,13 @@ function restartGame(game, hostId) {
   game.status = "lobby";
   game.players = players;
   game.currentPlayerIndex = 0;
+  game.turnCount = 0;
+  game.round = 1;
   game.winnerId = null;
+  delete game.finishReason;
+  delete game.resultRecordedAt;
   game.log.unshift(previousWinner ? `Новая партия создана. Прошлый победитель: ${previousWinner.name}.` : "Новая партия создана.");
+  recordDebug(game, "game.restart", { hostId, previousWinnerId: previousWinner?.id || null });
   touch(game);
 }
 
@@ -510,6 +806,8 @@ function kickPlayer(game, hostId, playerId) {
 }
 
 function takeTurn(game, playerId) {
+  ensureRoomShape(game);
+  validateGameState(game);
   if (game.status !== "playing") {
     throw new Error("Игра ещё не началась.");
   }
@@ -517,11 +815,15 @@ function takeTurn(game, playerId) {
   if (!player || player.id !== playerId) {
     throw new Error("Сейчас ход другого игрока.");
   }
+  if (hasPendingDecision(player)) {
+    throw new Error("Сначала завершите текущее решение.");
+  }
 
   if (player.skippedTurns > 0) {
     player.skippedTurns -= 1;
     player.lastRoll = 0;
     game.log.unshift(`${player.name} пропускает ход после сокращения.`);
+    recordDebug(game, "turn.skip", { playerId: player.id, skippedTurns: player.skippedTurns });
     advanceTurn(game);
     touch(game);
     return { kind: "skip", player };
@@ -532,6 +834,7 @@ function takeTurn(game, playerId) {
   const event = player.track === "project-league"
     ? takeProjectTurn(game, player, roll)
     : takeMoneyYardTurn(game, player, roll);
+  recordDebug(game, "turn.roll", { playerId: player.id, roll, track: player.track, event: event.kind });
 
   if (!game.winnerId && !hasPendingDecision(player)) {
     advanceTurn(game);
@@ -643,6 +946,7 @@ function repayLiability(game, playerId, liabilityId) {
 }
 
 function buyGrandGoal(game, playerId) {
+  ensureRoomShape(game);
   const player = game.players.find((item) => item.id === playerId);
   if (!player) {
     throw new Error("Игрок не найден.");
@@ -650,14 +954,17 @@ function buyGrandGoal(game, playerId) {
   if (player.track !== "project-league") {
     throw new Error("Большая цель доступна в Лиге проектов.");
   }
+  if (!allowsGoalVictory(game)) {
+    throw new Error("В этом режиме победа через большую цель отключена.");
+  }
   if (player.cash < player.grandGoal.cost) {
     throw new Error("Недостаточно денег для большой цели.");
   }
 
   player.cash -= player.grandGoal.cost;
-  game.status = "finished";
-  game.winnerId = player.id;
+  finishGame(game, player.id, "goal");
   game.log.unshift(`${player.name} закрывает большую цель "${player.grandGoal.title}" и выигрывает игру.`);
+  recordDebug(game, "victory.goal", { playerId: player.id, goalId: player.grandGoal.id });
   touch(game);
 }
 
@@ -842,8 +1149,9 @@ function resolveCell(game, player, cell, roll) {
       };
       message += ` ${card.title}: предложение продать "${asset.title}" за ${money(price)}.`;
     } else {
-      player.cash += card.amount;
-      const signed = card.amount >= 0 ? `+${money(card.amount)}` : `-${money(Math.abs(card.amount))}`;
+      const amount = Number(card.amount || 0);
+      player.cash += amount;
+      const signed = amount >= 0 ? `+${money(amount)}` : `-${money(Math.abs(amount))}`;
       message += ` ${card.title}: ${signed}.`;
     }
   }
@@ -863,7 +1171,9 @@ function resolveCell(game, player, cell, roll) {
     message += ` Сокращение: потеря ${money(loss)} и пропуск следующего хода.`;
   }
 
+  message += applyFinancialStress(game, player);
   game.log.unshift(message);
+  recordDebug(game, "cell.resolve", { playerId: player.id, track: player.track, cell: cell.type, roll });
   return { kind: cell.type, player, cell, message };
 }
 
@@ -883,11 +1193,12 @@ function resolveProjectCell(game, player, cell, roll) {
   }
 
   if (cell.type === "goal") {
-    if (player.cash >= player.grandGoal.cost) {
+    if (allowsGoalVictory(game) && player.cash >= player.grandGoal.cost) {
       player.cash -= player.grandGoal.cost;
-      game.status = "finished";
-      game.winnerId = player.id;
+      finishGame(game, player.id, "goal");
       message += ` ${player.name} закрывает большую цель "${player.grandGoal.title}" за ${money(player.grandGoal.cost)} и выигрывает.`;
+    } else if (!allowsGoalVictory(game)) {
+      message += ` В этом режиме большая цель не завершает партию.`;
     } else {
       message += ` Большая цель "${player.grandGoal.title}" стоит ${money(player.grandGoal.cost)}. Нужно накопить ещё ${money(player.grandGoal.cost - player.cash)}.`;
     }
@@ -930,7 +1241,9 @@ function resolveProjectCell(game, player, cell, roll) {
     }
   }
 
+  message += applyFinancialStress(game, player);
   game.log.unshift(message);
+  recordDebug(game, "cell.resolve", { playerId: player.id, track: player.track, cell: cell.type, roll });
   checkProgress(game, player);
   return { kind: `fast-${cell.type}`, player, cell, message };
 }
@@ -944,7 +1257,11 @@ function hasPendingDecision(player) {
 }
 
 function advanceTurn(game) {
+  ensureRoomShape(game);
   game.currentPlayerIndex = (game.currentPlayerIndex + 1) % game.players.length;
+  game.turnCount += 1;
+  game.round = Math.floor(game.turnCount / Math.max(1, game.players.length)) + 1;
+  checkTurnLimit(game);
 }
 
 function checkProgress(game, player) {
@@ -957,10 +1274,10 @@ function checkProgress(game, player) {
     return;
   }
 
-  if (player.track === "project-league" && hasWinningProjectPortfolio(player)) {
-    game.status = "finished";
-    game.winnerId = player.id;
+  if (player.track === "project-league" && allowsPortfolioVictory(game) && hasWinningProjectPortfolio(player)) {
+    finishGame(game, player.id, "portfolio");
     game.log.unshift(`${player.name} выигрывает: портфель проектов стал устойчивым.`);
+    recordDebug(game, "victory.portfolio", { playerId: player.id, projectIncome: player.projectIncome, projectAssets: projectAssetCount(player) });
   }
 }
 
@@ -986,6 +1303,154 @@ function hasWinningProjectPortfolio(player) {
   return player.projectIncome >= PROJECT_INCOME_GOAL && projectAssetCount(player) >= PROJECT_PORTFOLIO_GOAL;
 }
 
+function applyFinancialStress(game, player) {
+  let message = "";
+  const stressLimit = -Math.max(1200, Math.round(player.expenses * 0.75));
+  const crisisLimit = -Math.max(2400, Math.round(player.expenses * 1.5));
+  if (player.cash >= stressLimit) {
+    return message;
+  }
+
+  if (player.assets.length > 0) {
+    const asset = [...player.assets].sort((a, b) => (a.marketValue || a.cost || 0) - (b.marketValue || b.cost || 0))[0];
+    const sale = liquidateAsset(player, asset.id, 0.72);
+    message += ` Автоликвидация "${asset.title}": ${money(sale.net)}.`;
+    recordDebug(game, "debt.asset-liquidation", { playerId: player.id, assetId: asset.id, net: sale.net });
+  }
+
+  if (player.cash < crisisLimit && player.liabilities.length > 0) {
+    const restructured = restructureLargestLiability(player);
+    if (restructured) {
+      message += ` Реструктуризация "${restructured.title}": платёж снижен на ${money(restructured.paymentReduction)}.`;
+      recordDebug(game, "debt.restructure", { playerId: player.id, title: restructured.title, paymentReduction: restructured.paymentReduction });
+    }
+  }
+
+  if (player.cash < crisisLimit) {
+    player.bankruptcyCount = (player.bankruptcyCount || 0) + 1;
+    player.cash = 0;
+    player.reputation = Math.max(0, (player.reputation || 0) - 2);
+    player.skippedTurns = Math.max(player.skippedTurns || 0, 1);
+    delete player.pendingOpportunity;
+    delete player.pendingOpportunityChoice;
+    delete player.pendingMarketOffer;
+    delete player.pendingProjectDeal;
+    message += " Банкротство: кэш обнулён, репутация снижена, следующий ход пропускается.";
+    recordDebug(game, "debt.bankruptcy", { playerId: player.id, bankruptcyCount: player.bankruptcyCount });
+  }
+
+  return message;
+}
+
+function liquidateAsset(player, assetId, multiplier = 0.72) {
+  const assetIndex = player.assets.findIndex((asset) => asset.id === assetId);
+  if (assetIndex < 0) {
+    return { net: 0 };
+  }
+  const asset = player.assets[assetIndex];
+  const liabilityIndex = player.liabilities.findIndex((liability) => liability.id === asset.id);
+  const debt = liabilityIndex >= 0 ? player.liabilities[liabilityIndex].balance : 0;
+  const payment = liabilityIndex >= 0 ? player.liabilities[liabilityIndex].payment : 0;
+  const price = Math.round((asset.marketValue || asset.cost || 0) * multiplier);
+  const net = price - debt;
+  player.cash += net;
+  player.passiveIncome = Math.max(0, player.passiveIncome - (asset.passiveIncome || 0));
+  if (asset.type === "project-league") {
+    player.projectIncome = Math.max(0, player.projectIncome - (asset.passiveIncome || 0));
+  }
+  player.expenses = Math.max(0, player.expenses - payment);
+  player.assets.splice(assetIndex, 1);
+  if (liabilityIndex >= 0) {
+    player.liabilities.splice(liabilityIndex, 1);
+  }
+  return { price, debt, net };
+}
+
+function restructureLargestLiability(player) {
+  const liability = [...player.liabilities].sort((a, b) => b.payment - a.payment)[0];
+  if (!liability || liability.restructured) {
+    return null;
+  }
+  const oldPayment = liability.payment;
+  const paymentReduction = Math.max(40, Math.round(oldPayment * 0.35));
+  liability.payment = Math.max(20, oldPayment - paymentReduction);
+  liability.balance = Math.round(liability.balance * 1.12);
+  liability.restructured = true;
+  player.expenses = Math.max(0, player.expenses - (oldPayment - liability.payment));
+  player.cash += Math.round(player.expenses * 0.25);
+  return {
+    title: liability.title,
+    paymentReduction: oldPayment - liability.payment
+  };
+}
+
+function allowsGoalVictory(game) {
+  const mode = game.settings?.victoryMode || "classic";
+  return mode === "classic" || mode === "goal";
+}
+
+function allowsPortfolioVictory(game) {
+  const mode = game.settings?.victoryMode || "classic";
+  return mode === "classic" || mode === "portfolio";
+}
+
+function checkTurnLimit(game) {
+  if (game.status === "finished") {
+    return;
+  }
+  const maxTurns = game.settings?.maxTurns;
+  if (!maxTurns || game.turnCount < maxTurns) {
+    return;
+  }
+  const winner = [...game.players].sort((a, b) => playerNetWorth(b) - playerNetWorth(a))[0];
+  if (winner) {
+    finishGame(game, winner.id, "turn-limit");
+    game.log.unshift(`${winner.name} выигрывает по капиталу после лимита ходов.`);
+    recordDebug(game, "victory.turn-limit", { playerId: winner.id, turnCount: game.turnCount, netWorth: playerNetWorth(winner) });
+  }
+}
+
+function finishGame(game, winnerId, reason) {
+  game.status = "finished";
+  game.winnerId = winnerId;
+  game.finishReason = reason;
+}
+
+function playerNetWorth(player) {
+  const assetValue = player.assets.reduce((sum, asset) => sum + (asset.marketValue || asset.cost || 0), 0);
+  const liabilities = player.liabilities.reduce((sum, liability) => sum + (liability.balance || 0), 0);
+  return player.cash + assetValue - liabilities;
+}
+
+function validateGameState(game) {
+  ensureRoomShape(game);
+  if (!Array.isArray(game.players) || game.players.length === 0) {
+    throw new Error("В комнате нет игроков.");
+  }
+  const playerIds = new Set();
+  for (const player of game.players) {
+    if (!player.id || playerIds.has(player.id)) {
+      throw new Error("Некорректное состояние игроков.");
+    }
+    playerIds.add(player.id);
+    if (!Number.isFinite(player.cash) || !Number.isFinite(player.expenses) || !Number.isFinite(player.passiveIncome)) {
+      throw new Error("Некорректные финансовые значения игрока.");
+    }
+    const pendingCount = [player.pendingOpportunity, player.pendingOpportunityChoice, player.pendingMarketOffer, player.pendingProjectDeal]
+      .filter(Boolean).length;
+    if (pendingCount > 1) {
+      throw new Error("У игрока несколько незавершённых решений.");
+    }
+  }
+  if (game.currentPlayerIndex < 0 || game.currentPlayerIndex >= game.players.length) {
+    throw new Error("Некорректная очередь хода.");
+  }
+  if (game.winnerId && !playerIds.has(game.winnerId)) {
+    throw new Error("Победитель отсутствует среди игроков.");
+  }
+  return true;
+}
+
 function enterProjectLeague(game, player) {
   player.track = "project-league";
   player.projectPosition = 0;
@@ -1005,6 +1470,7 @@ function serializeGame(game) {
     ...game,
     currentPlayerId: currentPlayer(game)?.id || null,
     chat: game.chat.slice(-80),
+    debugLog: game.debugLog.slice(-120),
     professions: PROFESSIONS.map((profession) => ({
       id: profession.id,
       title: profession.title,
@@ -1057,6 +1523,8 @@ function serializeRules() {
     projectPortfolioGoal: PROJECT_PORTFOLIO_GOAL,
     reputationGoal: REPUTATION_GOAL,
     reserveMonthsGoal: RESERVE_MONTHS_GOAL,
+    gameLengths: Object.entries(GAME_LENGTHS).map(([id, item]) => ({ id, ...item })),
+    victoryModes: Object.entries(VICTORY_MODES).map(([id, item]) => ({ id, ...item })),
     grandGoals: GRAND_GOALS.map((goal) => ({ ...goal })),
     professions: PROFESSIONS.map((profession) => ({
       id: profession.id,
@@ -1124,6 +1592,19 @@ function touch(game) {
   game.updatedAt = Date.now();
 }
 
+function recordDebug(game, type, payload = {}) {
+  ensureRoomShape(game);
+  game.debugLog.push({
+    id: makeId(),
+    type,
+    payload,
+    turnCount: game.turnCount || 0,
+    round: game.round || 1,
+    createdAt: Date.now()
+  });
+  game.debugLog = game.debugLog.slice(-300);
+}
+
 module.exports = {
   CELLS,
   PROFESSIONS,
@@ -1152,5 +1633,6 @@ module.exports = {
   addChatMessage,
   serializeGame,
   serializeRules,
+  validateGameState,
   makeRoomCode
 };

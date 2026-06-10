@@ -945,6 +945,13 @@ h2 {
   line-height: 1.35;
 }
 
+.debug-log li {
+  color: #b5c3d8;
+  font-family: "Cascadia Mono", "Consolas", monospace;
+  font-size: 12px;
+  padding-bottom: 7px;
+}
+
 .hidden {
   display: none;
 }

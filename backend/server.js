@@ -164,7 +164,9 @@ async function handleApi(req, res, url) {
     const game = createGame(code, body.name || user.name, body.professionId, user.id, {
       title: body.title,
       privacy: body.privacy,
-      maxPlayers: body.maxPlayers
+      maxPlayers: body.maxPlayers,
+      gameLength: body.gameLength,
+      victoryMode: body.victoryMode
     });
     rooms.set(code, game);
     await persistGame(game);
@@ -253,7 +255,9 @@ async function handleApi(req, res, url) {
       updateRoomSettings(game, body.playerId, {
         title: body.title,
         privacy: body.privacy,
-        maxPlayers: body.maxPlayers
+        maxPlayers: body.maxPlayers,
+        gameLength: body.gameLength,
+        victoryMode: body.victoryMode
       });
       await persistGame(game);
       const payload = { game: serializeGame(game) };

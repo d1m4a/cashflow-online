@@ -188,6 +188,23 @@
               </select>
             </label>
             <label>
+              Длина партии
+              <select id="createGameLength" name="gameLength">
+                <option value="open">Без лимита</option>
+                <option value="quick">Быстрая</option>
+                <option value="standard">Стандартная</option>
+              </select>
+            </label>
+            <label>
+              Режим победы
+              <select id="createVictoryMode" name="victoryMode">
+                <option value="classic">Классика</option>
+                <option value="goal">Большая цель</option>
+                <option value="portfolio">Портфель проектов</option>
+                <option value="netWorth">Капитал к лимиту ходов</option>
+              </select>
+            </label>
+            <label>
               Имя
               <input id="createName" name="name" maxlength="24" placeholder="Например, Дмитрий" required>
             </label>
@@ -278,6 +295,23 @@
                   <option value="1">1</option>
                 </select>
               </label>
+              <label>
+                Длина
+                <select id="roomGameLengthInput">
+                  <option value="open">Без лимита</option>
+                  <option value="quick">Быстрая</option>
+                  <option value="standard">Стандартная</option>
+                </select>
+              </label>
+              <label>
+                Победа
+                <select id="roomVictoryModeInput">
+                  <option value="classic">Классика</option>
+                  <option value="goal">Цель</option>
+                  <option value="portfolio">Портфель</option>
+                  <option value="netWorth">Капитал</option>
+                </select>
+              </label>
               <button id="saveRoomSettingsButton" type="button" class="secondary">Сохранить комнату</button>
             </div>
             <button id="readyButton" type="button" class="secondary">Готов</button>
@@ -312,6 +346,11 @@
             <p class="eyebrow">6. Окно событий</p>
             <h2>События</h2>
             <ul class="log" id="log"></ul>
+          </div>
+          <div>
+            <p class="eyebrow">Replay</p>
+            <h2>Debug log</h2>
+            <ul class="log debug-log" id="debugLog"></ul>
           </div>
           <div class="chat-panel">
             <p class="eyebrow">9. Чат</p>

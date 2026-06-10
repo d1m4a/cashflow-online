@@ -56,6 +56,8 @@ const roomSettingsPanel = document.querySelector("#roomSettingsPanel");
 const roomTitleInput = document.querySelector("#roomTitleInput");
 const roomPrivacyInput = document.querySelector("#roomPrivacyInput");
 const roomMaxPlayersInput = document.querySelector("#roomMaxPlayersInput");
+const roomGameLengthInput = document.querySelector("#roomGameLengthInput");
+const roomVictoryModeInput = document.querySelector("#roomVictoryModeInput");
 const saveRoomSettingsButton = document.querySelector("#saveRoomSettingsButton");
 const readyButton = document.querySelector("#readyButton");
 const startButton = document.querySelector("#startButton");
@@ -67,6 +69,7 @@ const message = document.querySelector("#message");
 const players = document.querySelector("#players");
 const board = document.querySelector("#board");
 const log = document.querySelector("#log");
+const debugLog = document.querySelector("#debugLog");
 const resultPanel = document.querySelector("#resultPanel");
 const dealPanel = document.querySelector("#dealPanel");
 const marketPanel = document.querySelector("#marketPanel");
@@ -236,7 +239,9 @@ createForm.addEventListener("submit", async (event) => {
         professionId,
         title: document.querySelector("#createRoomTitle").value.trim(),
         privacy: document.querySelector("#createRoomPrivacy").value,
-        maxPlayers: Number(document.querySelector("#createMaxPlayers").value)
+        maxPlayers: Number(document.querySelector("#createMaxPlayers").value),
+        gameLength: document.querySelector("#createGameLength").value,
+        victoryMode: document.querySelector("#createVictoryMode").value
       }
     });
     await enterRoom(data.roomCode, data.playerId, data.game);
@@ -297,7 +302,9 @@ saveRoomSettingsButton.addEventListener("click", async () => {
         playerId: state.playerId,
         title: roomTitleInput.value,
         privacy: roomPrivacyInput.value,
-        maxPlayers: Number(roomMaxPlayersInput.value)
+        maxPlayers: Number(roomMaxPlayersInput.value),
+        gameLength: roomGameLengthInput.value,
+        victoryMode: roomVictoryModeInput.value
       }
     });
     await setGame(data.game);
@@ -496,9 +503,12 @@ async function setGame(game, presence = state.presence) {
   roomTitleInput.value = game.title || `Комната ${game.roomCode}`;
   roomPrivacyInput.value = game.privacy || "private";
   roomMaxPlayersInput.value = String(game.maxPlayers || 4);
+  roomGameLengthInput.value = game.settings?.gameLength || "open";
+  roomVictoryModeInput.value = game.settings?.victoryMode || "classic";
   renderPlayers();
   renderBoard();
   renderLog();
+  renderDebugLog();
   renderResult();
   renderDeal();
   renderMarketOffer();
@@ -734,6 +744,7 @@ function renderPlayers() {
     if (player.id === state.game.currentPlayerId) card.classList.add("active");
     if (player.id === state.game.winnerId) card.classList.add("winner");
     const hostMark = player.id === state.game.hostId ? `<span class="player-mark host-mark">Хост</span>` : "";
+    const bankruptcyMark = player.bankruptcyCount ? `<span class="player-mark offline-mark">банкротств ${player.bankruptcyCount}</span>` : "";
     const readyMark = state.game.status === "lobby"
       ? `<span class="player-mark ${player.ready || player.id === state.game.hostId ? "ready-mark" : ""}">${player.id === state.game.hostId ? "управляет" : player.ready ? "готов" : "не готов"}</span>`
       : "";
@@ -748,7 +759,7 @@ function renderPlayers() {
         <span>${escapeHtml(player.name)}</span>
         <span>${player.lastRoll ? `D6 ${player.lastRoll}` : ""}</span>
       </div>
-      <div class="player-flags">${hostMark}${readyMark}${connectionMark}${transferButton}${kickButton}</div>
+      <div class="player-flags">${hostMark}${readyMark}${connectionMark}${bankruptcyMark}${transferButton}${kickButton}</div>
       <div class="profession">${escapeHtml(player.profession || "Профессия")} · ${player.track === "project-league" ? "Лига проектов" : "Денежный двор"}</div>
       ${player.track === "project-league" ? `<div class="goal-line">Цель: ${escapeHtml(player.grandGoal?.title || "проект")}</div>` : ""}
       <div class="stats">
@@ -760,6 +771,7 @@ function renderPlayers() {
         <span>Репутация<strong>${player.reputation ?? 0}</strong></span>
         <span>Платежи<strong>${money(player.totalLiabilityPayment ?? 0)}</strong></span>
         <span>Долги<strong>${money(player.liabilityBalance ?? 0)}</strong></span>
+        ${player.bankruptcyCount ? `<span>Банкротств<strong>${player.bankruptcyCount}</strong></span>` : ""}
         <span>Активы<strong>${player.assets.length}</strong></span>
         ${player.track === "project-league" ? `<span>Проекты<strong>${money(player.projectIncome ?? 0)}</strong></span>` : ""}
       </div>
@@ -857,6 +869,15 @@ function renderLog() {
     const li = document.createElement("li");
     li.textContent = item;
     log.append(li);
+  });
+}
+
+function renderDebugLog() {
+  debugLog.innerHTML = "";
+  (state.game.debugLog || []).slice(-30).reverse().forEach((item) => {
+    const li = document.createElement("li");
+    li.textContent = `#${item.turnCount ?? 0} R${item.round ?? 1} ${item.type}`;
+    debugLog.append(li);
   });
 }
 
