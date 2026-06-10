@@ -540,6 +540,16 @@ h2 {
   text-transform: uppercase;
 }
 
+.online-mark {
+  border-color: rgba(70, 200, 111, 0.45);
+  color: var(--green);
+}
+
+.offline-mark {
+  border-color: rgba(239, 95, 104, 0.38);
+  color: #ff9ba1;
+}
+
 .host-mark {
   border-color: rgba(240, 181, 76, 0.44);
   color: var(--gold);

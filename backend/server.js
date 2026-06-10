@@ -2,6 +2,7 @@ const http = require("http");
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
+const WebSocket = require("ws");
 const db = require("./db");
 const {
   createGame,
@@ -36,8 +37,9 @@ const PORT = Number(process.env.PORT || 3000);
 const ROOT = path.resolve(__dirname, "..");
 const FRONTEND_DIR = path.join(ROOT, "frontend");
 const rooms = new Map();
-const roomStreams = new Map();
+const roomSockets = new Map();
 const authAttempts = new Map();
+const WS_HEARTBEAT_MS = Number(process.env.WS_HEARTBEAT_MS || 30_000);
 const AUTH_RATE_WINDOW_MS = Number(process.env.AUTH_RATE_WINDOW_MS || 60_000);
 const AUTH_RATE_MAX = Number(process.env.AUTH_RATE_MAX || 12);
 const SESSION_MAX_AGE_MS = Number(process.env.SESSION_MAX_AGE_MS || 30 * 24 * 60 * 60 * 1000);
@@ -59,6 +61,52 @@ const server = http.createServer(async (req, res) => {
   } catch (error) {
     handleUnexpectedError(res, error);
   }
+});
+const wsServer = new WebSocket.Server({ noServer: true });
+
+server.on("upgrade", async (req, socket, head) => {
+  try {
+    const url = new URL(req.url, `http://${req.headers.host}`);
+    if (url.pathname !== "/ws") {
+      socket.destroy();
+      return;
+    }
+
+    const user = await currentUser(req);
+    const roomCode = String(url.searchParams.get("room") || "").trim().toUpperCase();
+    const game = rooms.get(roomCode);
+    if (!user || !game || !canReadRoom(game, user.id)) {
+      socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
+      socket.destroy();
+      return;
+    }
+
+    wsServer.handleUpgrade(req, socket, head, (ws) => {
+      wsServer.emit("connection", ws, req, { game, user, url });
+    });
+  } catch (error) {
+    console.error("WebSocket upgrade failed:", error);
+    socket.destroy();
+  }
+});
+
+wsServer.on("connection", (ws, req, context) => {
+  attachRoomSocket(ws, context.game, context.user, context.url);
+});
+
+const heartbeatTimer = setInterval(() => {
+  for (const ws of wsServer.clients) {
+    if (ws.isAlive === false) {
+      ws.terminate();
+      continue;
+    }
+    ws.isAlive = false;
+    ws.ping();
+  }
+}, WS_HEARTBEAT_MS);
+
+wsServer.on("close", () => {
+  clearInterval(heartbeatTimer);
 });
 
 if (require.main === module) {
@@ -142,17 +190,10 @@ async function handleApi(req, res, url) {
     return;
   }
 
-  if (req.method === "GET" && action === "events") {
-    const user = await requireUser(req, res);
-    if (!user || !canReadRoom(game, user.id)) return;
-    subscribeToRoom(req, res, game);
-    return;
-  }
-
   if (req.method === "GET" && !action) {
     const user = await requireUser(req, res);
     if (!user || !canReadRoom(game, user.id)) return;
-    sendJson(res, 200, { game: serializeGame(game) });
+    sendJson(res, 200, roomPayload(game));
     return;
   }
 
@@ -171,7 +212,7 @@ async function handleApi(req, res, url) {
       await persistGame(game);
       const payload = { playerId: player.id, game: serializeGame(game) };
       sendJson(res, 200, payload);
-      broadcastRoom(game);
+      broadcastRoom(game, "join");
       return;
     }
 
@@ -180,7 +221,7 @@ async function handleApi(req, res, url) {
       await persistGame(game);
       const payload = { spectatorId: spectator.id, game: serializeGame(game) };
       sendJson(res, 200, payload);
-      broadcastRoom(game);
+      broadcastRoom(game, "join");
       return;
     }
 
@@ -194,7 +235,7 @@ async function handleApi(req, res, url) {
       await persistGame(game);
       const payload = { game: serializeGame(game) };
       sendJson(res, 200, payload);
-      broadcastRoom(game);
+      broadcastRoom(game, "leave");
       return;
     }
 
@@ -217,7 +258,7 @@ async function handleApi(req, res, url) {
       await persistGame(game);
       const payload = { game: serializeGame(game) };
       sendJson(res, 200, payload);
-      broadcastRoom(game);
+      broadcastRoom(game, "room:update");
       return;
     }
 
@@ -226,7 +267,7 @@ async function handleApi(req, res, url) {
       await persistGame(game);
       const payload = { game: serializeGame(game) };
       sendJson(res, 200, payload);
-      broadcastRoom(game);
+      broadcastRoom(game, "room:update");
       return;
     }
 
@@ -235,7 +276,7 @@ async function handleApi(req, res, url) {
       await persistGame(game);
       const payload = { game: serializeGame(game) };
       sendJson(res, 200, payload);
-      broadcastRoom(game);
+      broadcastRoom(game, "room:update");
       return;
     }
 
@@ -244,7 +285,7 @@ async function handleApi(req, res, url) {
       await persistGame(game);
       const payload = { game: serializeGame(game) };
       sendJson(res, 200, payload);
-      broadcastRoom(game);
+      broadcastRoom(game, "ready");
       return;
     }
 
@@ -253,7 +294,7 @@ async function handleApi(req, res, url) {
       await persistGame(game);
       const payload = { game: serializeGame(game) };
       sendJson(res, 200, payload);
-      broadcastRoom(game);
+      broadcastRoom(game, "room:update");
       return;
     }
 
@@ -263,7 +304,7 @@ async function handleApi(req, res, url) {
       await persistGame(game);
       const payload = { game: serializeGame(game) };
       sendJson(res, 200, payload);
-      broadcastRoom(game);
+      broadcastRoom(game, "room:update");
       return;
     }
 
@@ -272,7 +313,7 @@ async function handleApi(req, res, url) {
       await persistGame(game);
       const payload = { game: serializeGame(game) };
       sendJson(res, 200, payload);
-      broadcastRoom(game);
+      broadcastRoom(game, "room:update");
       return;
     }
 
@@ -281,7 +322,7 @@ async function handleApi(req, res, url) {
       await persistGame(game);
       const payload = { game: serializeGame(game) };
       sendJson(res, 200, payload);
-      broadcastRoom(game);
+      broadcastRoom(game, "room:update");
       return;
     }
 
@@ -290,7 +331,7 @@ async function handleApi(req, res, url) {
       await persistGame(game);
       const payload = { game: serializeGame(game) };
       sendJson(res, 200, payload);
-      broadcastRoom(game);
+      broadcastRoom(game, "turn");
       return;
     }
 
@@ -299,7 +340,7 @@ async function handleApi(req, res, url) {
       await persistGame(game);
       const payload = { game: serializeGame(game) };
       sendJson(res, 200, payload);
-      broadcastRoom(game);
+      broadcastRoom(game, "room:update");
       return;
     }
 
@@ -312,7 +353,7 @@ async function handleApi(req, res, url) {
       await persistGame(game);
       const payload = { game: serializeGame(game) };
       sendJson(res, 200, payload);
-      broadcastRoom(game);
+      broadcastRoom(game, "room:update");
       return;
     }
 
@@ -321,7 +362,7 @@ async function handleApi(req, res, url) {
       await persistGame(game);
       const payload = { game: serializeGame(game) };
       sendJson(res, 200, payload);
-      broadcastRoom(game);
+      broadcastRoom(game, "room:update");
       return;
     }
 
@@ -330,7 +371,7 @@ async function handleApi(req, res, url) {
       await persistGame(game);
       const payload = { game: serializeGame(game) };
       sendJson(res, 200, payload);
-      broadcastRoom(game);
+      broadcastRoom(game, "room:update");
       return;
     }
 
@@ -339,7 +380,7 @@ async function handleApi(req, res, url) {
       await persistGame(game);
       const payload = { game: serializeGame(game) };
       sendJson(res, 200, payload);
-      broadcastRoom(game);
+      broadcastRoom(game, "room:update");
       return;
     }
 
@@ -348,7 +389,7 @@ async function handleApi(req, res, url) {
       await persistGame(game);
       const payload = { game: serializeGame(game) };
       sendJson(res, 200, payload);
-      broadcastRoom(game);
+      broadcastRoom(game, "room:update");
       return;
     }
 
@@ -357,7 +398,7 @@ async function handleApi(req, res, url) {
       await persistGame(game);
       const payload = { game: serializeGame(game) };
       sendJson(res, 200, payload);
-      broadcastRoom(game);
+      broadcastRoom(game, "room:update");
       return;
     }
 
@@ -366,7 +407,7 @@ async function handleApi(req, res, url) {
       await persistGame(game);
       const payload = { game: serializeGame(game) };
       sendJson(res, 200, payload);
-      broadcastRoom(game);
+      broadcastRoom(game, "room:update");
       return;
     }
 
@@ -375,7 +416,7 @@ async function handleApi(req, res, url) {
       await persistGame(game);
       const payload = { game: serializeGame(game) };
       sendJson(res, 200, payload);
-      broadcastRoom(game);
+      broadcastRoom(game, "room:update");
       return;
     }
 
@@ -581,55 +622,120 @@ async function handleAuthApi(req, res, url) {
   sendJson(res, 404, { error: "Маршрут не найден." });
 }
 
-function subscribeToRoom(req, res, game) {
-  res.writeHead(200, {
-    "Content-Type": "text/event-stream; charset=utf-8",
-    "Cache-Control": "no-cache, no-transform",
-    Connection: "keep-alive",
-    "X-Accel-Buffering": "no"
-  });
-  res.write("retry: 1500\n\n");
-
-  let streams = roomStreams.get(game.roomCode);
-  if (!streams) {
-    streams = new Set();
-    roomStreams.set(game.roomCode, streams);
+function attachRoomSocket(ws, game, user, url) {
+  const roomCode = game.roomCode;
+  const playerId = String(url.searchParams.get("playerId") || "");
+  const spectatorId = String(url.searchParams.get("spectatorId") || "");
+  let sockets = roomSockets.get(roomCode);
+  if (!sockets) {
+    sockets = new Set();
+    roomSockets.set(roomCode, sockets);
   }
 
-  streams.add(res);
-  writeEvent(res, "state", { game: serializeGame(game) });
+  ws.isAlive = true;
+  ws.roomCode = roomCode;
+  ws.userId = user.id;
+  ws.playerId = canActAsPlayer(game, user.id, playerId) ? playerId : null;
+  ws.spectatorId = game.spectators?.some((item) => item.id === spectatorId && item.accountId === user.id) ? spectatorId : null;
+  ws.connectedAt = Date.now();
+  ws.lastSeenAt = ws.connectedAt;
+  sockets.add(ws);
 
-  req.on("close", () => {
-    streams.delete(res);
-    if (streams.size === 0) {
-      roomStreams.delete(game.roomCode);
+  ws.on("pong", () => {
+    ws.isAlive = true;
+    ws.lastSeenAt = Date.now();
+  });
+  ws.on("message", (raw) => {
+    handleSocketMessage(ws, raw);
+  });
+  ws.on("close", () => {
+    ws.lastSeenAt = Date.now();
+    sockets.delete(ws);
+    if (sockets.size === 0) {
+      roomSockets.delete(roomCode);
+    }
+    const currentGame = rooms.get(roomCode);
+    if (currentGame) {
+      broadcastRoom(currentGame, "presence");
     }
   });
+
+  sendSocket(ws, "state", roomPayload(game));
+  broadcastRoom(game, "presence");
 }
 
-function broadcastRoom(game) {
-  const streams = roomStreams.get(game.roomCode);
-  if (!streams) {
+function handleSocketMessage(ws, raw) {
+  let message;
+  try {
+    message = JSON.parse(raw.toString());
+  } catch {
+    return;
+  }
+  ws.lastSeenAt = Date.now();
+  if (message.type === "pong" || message.type === "heartbeat") {
+    ws.isAlive = true;
+    sendSocket(ws, "heartbeat", { ok: true, at: Date.now() });
+  }
+}
+
+function broadcastRoom(game, event = "room:update") {
+  const sockets = roomSockets.get(game.roomCode);
+  if (!sockets || sockets.size === 0) {
     return;
   }
 
-  const payload = { game: serializeGame(game) };
-  for (const stream of streams) {
-    writeEvent(stream, "state", payload);
+  const payload = roomPayload(game);
+  for (const socket of sockets) {
+    sendSocket(socket, event, payload);
   }
 }
 
 function broadcastRoomsForUser(userId) {
   for (const game of rooms.values()) {
     if (game.players.some((player) => player.accountId === userId) || game.spectators?.some((spectator) => spectator.accountId === userId)) {
-      broadcastRoom(game);
+      broadcastRoom(game, "room:update");
     }
   }
 }
 
-function writeEvent(res, event, payload) {
-  res.write(`event: ${event}\n`);
-  res.write(`data: ${JSON.stringify(payload)}\n\n`);
+function sendSocket(ws, event, payload) {
+  if (ws.readyState !== WebSocket.OPEN) {
+    return;
+  }
+  ws.send(JSON.stringify({ event, ...payload }));
+}
+
+function roomPayload(game) {
+  return {
+    game: serializeGame(game),
+    presence: roomPresence(game)
+  };
+}
+
+function roomPresence(game) {
+  const sockets = [...(roomSockets.get(game.roomCode) || [])].filter((ws) => ws.readyState === WebSocket.OPEN);
+  const playerConnections = new Map();
+  const spectatorConnections = new Map();
+  for (const ws of sockets) {
+    if (ws.playerId) {
+      playerConnections.set(ws.playerId, Math.max(playerConnections.get(ws.playerId) || 0, ws.lastSeenAt || ws.connectedAt || Date.now()));
+    }
+    if (ws.spectatorId) {
+      spectatorConnections.set(ws.spectatorId, Math.max(spectatorConnections.get(ws.spectatorId) || 0, ws.lastSeenAt || ws.connectedAt || Date.now()));
+    }
+  }
+  return {
+    players: game.players.map((player) => ({
+      id: player.id,
+      connected: playerConnections.has(player.id),
+      lastSeenAt: playerConnections.get(player.id) || null
+    })),
+    spectators: (game.spectators || []).map((spectator) => ({
+      id: spectator.id,
+      connected: spectatorConnections.has(spectator.id),
+      lastSeenAt: spectatorConnections.get(spectator.id) || null
+    }))
+  };
 }
 
 function serveStatic(req, res, url) {

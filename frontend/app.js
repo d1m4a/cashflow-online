@@ -9,8 +9,12 @@ const state = {
   spectatorId: localStorage.getItem("meshok.spectatorId"),
   user: null,
   game: null,
+  presence: null,
   pollTimer: null,
-  eventSource: null
+  socket: null,
+  reconnectTimer: null,
+  heartbeatTimer: null,
+  reconnectAttempt: 0
 };
 
 const authPanel = document.querySelector("#authPanel");
@@ -468,9 +472,10 @@ async function refreshMe() {
   await setUser(session.user);
 }
 
-async function setGame(game) {
+async function setGame(game, presence = state.presence) {
   await ensureRulesLoaded();
   state.game = game;
+  state.presence = presence || null;
   if ((state.playerId && !myPlayer()) || (state.spectatorId && !mySpectator())) {
     clearRoomSession();
     state.roomCode = null;
@@ -722,6 +727,8 @@ function renderPlayers() {
   const me = myPlayer();
   const isHost = me?.id === state.game.hostId;
   state.game.players.forEach((player) => {
+    const presence = playerPresence(player.id);
+    const connectionMark = `<span class="player-mark ${presence.connected ? "online-mark" : "offline-mark"}">${presence.connected ? "online" : "disconnected"}</span>`;
     const card = document.createElement("article");
     card.className = "player-card";
     if (player.id === state.game.currentPlayerId) card.classList.add("active");
@@ -741,7 +748,7 @@ function renderPlayers() {
         <span>${escapeHtml(player.name)}</span>
         <span>${player.lastRoll ? `D6 ${player.lastRoll}` : ""}</span>
       </div>
-      <div class="player-flags">${hostMark}${readyMark}${transferButton}${kickButton}</div>
+      <div class="player-flags">${hostMark}${readyMark}${connectionMark}${transferButton}${kickButton}</div>
       <div class="profession">${escapeHtml(player.profession || "Профессия")} · ${player.track === "project-league" ? "Лига проектов" : "Денежный двор"}</div>
       ${player.track === "project-league" ? `<div class="goal-line">Цель: ${escapeHtml(player.grandGoal?.title || "проект")}</div>` : ""}
       <div class="stats">
@@ -768,7 +775,10 @@ function renderPlayers() {
         <span>Наблюдатели</span>
         <span>${state.game.spectators.length}</span>
       </div>
-      <div class="spectator-list">${state.game.spectators.map((item) => `<span>${escapeHtml(item.name)}</span>`).join("")}</div>
+      <div class="spectator-list">${state.game.spectators.map((item) => {
+        const presence = spectatorPresence(item.id);
+        return `<span class="${presence.connected ? "online-mark" : "offline-mark"}">${escapeHtml(item.name)}</span>`;
+      }).join("")}</div>
     `;
     players.append(list);
   }
@@ -1221,34 +1231,100 @@ function updateControls() {
 
 async function refreshGame() {
   const data = await api(`/api/rooms/${state.roomCode}`);
-  await setGame(data.game);
+  await setGame(data.game, data.presence);
 }
 
 function connectRealtime() {
+  disconnectRealtime();
   stopPolling();
-  if (state.eventSource) {
-    state.eventSource.close();
-  }
 
-  if (typeof EventSource !== "function") {
+  if (typeof WebSocket !== "function") {
     startPolling();
     return;
   }
 
-  state.eventSource = new EventSource(`/api/rooms/${state.roomCode}/events`);
-  state.eventSource.addEventListener("state", (event) => {
-    const data = JSON.parse(event.data);
-    setGame(data.game).catch((error) => showError(error.message || "Не удалось обновить игру."));
-  });
-  state.eventSource.addEventListener("open", () => {
+  const params = new URLSearchParams({ room: state.roomCode || "" });
+  if (state.playerId) params.set("playerId", state.playerId);
+  if (state.spectatorId) params.set("spectatorId", state.spectatorId);
+  const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+  const socket = new WebSocket(`${protocol}//${window.location.host}/ws?${params}`);
+  socket.shouldReconnect = true;
+  state.socket = socket;
+
+  socket.addEventListener("open", () => {
+    state.reconnectAttempt = 0;
     stopPolling();
-  });
-  state.eventSource.addEventListener("error", () => {
-    startPolling();
+    startHeartbeat();
     if (state.game) {
-      message.textContent = "Связь восстанавливается. Включён резервный режим обновления.";
+      message.textContent = "Связь с комнатой восстановлена.";
     }
   });
+  socket.addEventListener("message", (event) => {
+    let data;
+    try {
+      data = JSON.parse(event.data);
+    } catch {
+      return;
+    }
+    if (data.game) {
+      setGame(data.game, data.presence).catch((error) => showError(error.message || "Не удалось обновить игру."));
+    }
+  });
+  socket.addEventListener("close", () => {
+    stopHeartbeat();
+    const shouldReconnect = socket.shouldReconnect !== false;
+    if (state.socket === socket) {
+      state.socket = null;
+    }
+    if (shouldReconnect) {
+      startPolling();
+      if (state.game) {
+        message.textContent = "Связь потеряна. Восстанавливаю комнату...";
+      }
+      scheduleReconnect();
+    }
+  });
+  socket.addEventListener("error", () => {
+    socket.close();
+  });
+}
+
+function disconnectRealtime() {
+  clearTimeout(state.reconnectTimer);
+  state.reconnectTimer = null;
+  stopHeartbeat();
+  if (state.socket) {
+    state.socket.shouldReconnect = false;
+    state.socket.close();
+    state.socket = null;
+  }
+}
+
+function scheduleReconnect() {
+  clearTimeout(state.reconnectTimer);
+  if (!state.roomCode || (!state.playerId && !state.spectatorId)) {
+    return;
+  }
+  state.reconnectAttempt += 1;
+  const delay = Math.min(8000, 600 * state.reconnectAttempt);
+  state.reconnectTimer = window.setTimeout(() => {
+    refreshGame().catch(() => {});
+    connectRealtime();
+  }, delay);
+}
+
+function startHeartbeat() {
+  stopHeartbeat();
+  state.heartbeatTimer = window.setInterval(() => {
+    if (state.socket?.readyState === WebSocket.OPEN) {
+      state.socket.send(JSON.stringify({ type: "heartbeat", at: Date.now() }));
+    }
+  }, 15000);
+}
+
+function stopHeartbeat() {
+  clearInterval(state.heartbeatTimer);
+  state.heartbeatTimer = null;
 }
 
 function startPolling() {
@@ -1296,6 +1372,16 @@ function mySpectator() {
   return state.game?.spectators?.find((spectator) => spectator.id === state.spectatorId);
 }
 
+function playerPresence(playerId) {
+  const item = state.presence?.players?.find((entry) => entry.id === playerId);
+  return item || { connected: false, lastSeenAt: null };
+}
+
+function spectatorPresence(spectatorId) {
+  const item = state.presence?.spectators?.find((entry) => entry.id === spectatorId);
+  return item || { connected: false, lastSeenAt: null };
+}
+
 function inviteUrl() {
   const url = new URL(window.location.href);
   url.searchParams.set("room", state.roomCode || "");
@@ -1315,12 +1401,11 @@ function victoryReason(winner) {
 function clearSession() {
   clearRoomSession();
   state.game = null;
+  state.presence = null;
   localStorage.removeItem("meshok.roomCode");
   localStorage.removeItem("meshok.playerId");
   localStorage.removeItem("meshok.spectatorId");
-  if (state.eventSource) {
-    state.eventSource.close();
-  }
+  disconnectRealtime();
   stopPolling();
 }
 
@@ -1331,10 +1416,8 @@ function clearRoomSession() {
   state.roomCode = null;
   state.playerId = null;
   state.spectatorId = null;
-  if (state.eventSource) {
-    state.eventSource.close();
-    state.eventSource = null;
-  }
+  state.presence = null;
+  disconnectRealtime();
   stopPolling();
 }
 
