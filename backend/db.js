@@ -2,9 +2,16 @@ const fs = require("fs");
 const path = require("path");
 const { Pool } = require("pg");
 
-const DATABASE_URL = process.env.DATABASE_URL || "postgres://cashflow:cashflow@localhost:15432/cashflow_online";
+const isProduction = process.env.NODE_ENV === "production";
+const DATABASE_URL = process.env.DATABASE_URL || (isProduction ? "" : "postgres://cashflow:cashflow@localhost:15432/cashflow_online");
+
+if (!DATABASE_URL) {
+  throw new Error("DATABASE_URL is required in production.");
+}
+
 const pool = new Pool({
-  connectionString: DATABASE_URL
+  connectionString: DATABASE_URL,
+  ssl: process.env.DATABASE_SSL === "true" ? { rejectUnauthorized: false } : undefined
 });
 
 async function initDb() {

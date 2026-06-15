@@ -37,6 +37,8 @@ const {
 const PORT = Number(process.env.PORT || 3000);
 const ROOT = path.resolve(__dirname, "..");
 const FRONTEND_DIR = path.join(ROOT, "frontend");
+const IS_PRODUCTION = process.env.NODE_ENV === "production";
+const TRUSTED_ORIGINS = parseTrustedOrigins(process.env.CORS_ORIGINS || process.env.PUBLIC_ORIGIN || "");
 const rooms = new Map();
 const roomSockets = new Map();
 const authAttempts = new Map();
@@ -47,11 +49,28 @@ const SESSION_MAX_AGE_MS = Number(process.env.SESSION_MAX_AGE_MS || 30 * 24 * 60
 const SESSION_IDLE_MS = Number(process.env.SESSION_IDLE_MS || 7 * 24 * 60 * 60 * 1000);
 const EMAIL_TOKEN_TTL_MS = Number(process.env.EMAIL_TOKEN_TTL_MS || 24 * 60 * 60 * 1000);
 const PASSWORD_RESET_TTL_MS = Number(process.env.PASSWORD_RESET_TTL_MS || 60 * 60 * 1000);
-const EMAIL_DEV_MODE = process.env.EMAIL_DEV_MODE !== "false";
+const EMAIL_DEV_MODE = process.env.EMAIL_DEV_MODE !== "false" && !IS_PRODUCTION;
+let isShuttingDown = false;
 
 const server = http.createServer(async (req, res) => {
   try {
+    res._request = req;
+    if (isShuttingDown) {
+      sendJson(res, 503, { error: "Сервер завершает работу." }, { "Connection": "close" });
+      return;
+    }
+
     const url = new URL(req.url, `http://${req.headers.host}`);
+
+    if (req.method === "OPTIONS") {
+      handleOptions(req, res);
+      return;
+    }
+
+    if (!isRequestOriginAllowed(req)) {
+      sendJson(res, 403, { error: "Origin is not allowed." });
+      return;
+    }
 
     if (url.pathname.startsWith("/api/")) {
       await handleApi(req, res, url);
@@ -67,6 +86,12 @@ const wsServer = new WebSocket.Server({ noServer: true });
 
 server.on("upgrade", async (req, socket, head) => {
   try {
+    if (isShuttingDown || !isRequestOriginAllowed(req)) {
+      socket.write("HTTP/1.1 403 Forbidden\r\n\r\n");
+      socket.destroy();
+      return;
+    }
+
     const url = new URL(req.url, `http://${req.headers.host}`);
     if (url.pathname !== "/ws") {
       socket.destroy();
@@ -115,6 +140,8 @@ if (require.main === module) {
     console.error(error);
     process.exitCode = 1;
   });
+  process.once("SIGTERM", () => shutdown("SIGTERM"));
+  process.once("SIGINT", () => shutdown("SIGINT"));
 }
 
 async function startServer(port = PORT) {
@@ -126,6 +153,31 @@ async function startServer(port = PORT) {
       resolve(instance);
     });
   });
+}
+
+async function shutdown(signal) {
+  if (isShuttingDown) {
+    return;
+  }
+  isShuttingDown = true;
+  console.log(`Received ${signal}, shutting down...`);
+
+  const forceTimer = setTimeout(() => {
+    console.error("Graceful shutdown timed out.");
+    process.exit(1);
+  }, Number(process.env.SHUTDOWN_TIMEOUT_MS || 10_000));
+  forceTimer.unref();
+
+  for (const ws of wsServer.clients) {
+    ws.close(1001, "Server shutting down");
+  }
+
+  await new Promise((resolve) => server.close(resolve));
+  wsServer.close();
+  clearInterval(heartbeatTimer);
+  await db.closeDb();
+  clearTimeout(forceTimer);
+  process.exit(0);
 }
 
 async function handleApi(req, res, url) {
@@ -786,10 +838,10 @@ function serveStatic(req, res, url) {
       ".json": "application/json; charset=utf-8"
     }[ext] || "application/octet-stream";
 
-    res.writeHead(200, {
+    res.writeHead(200, responseHeaders({
       "Content-Type": contentType,
       "Cache-Control": "no-store"
-    });
+    }, req));
     res.end(data);
   });
 }
@@ -1142,13 +1194,94 @@ function parseCookies(raw) {
   }, {});
 }
 
+function parseTrustedOrigins(raw) {
+  return String(raw || "")
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+}
+
+function requestOrigin(req) {
+  return req.headers.origin || "";
+}
+
+function isRequestOriginAllowed(req) {
+  const origin = requestOrigin(req);
+  if (!origin) {
+    return true;
+  }
+  if (origin === requestPublicOrigin(req)) {
+    return true;
+  }
+  if (!IS_PRODUCTION && /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(?::\d+)?$/.test(origin)) {
+    return true;
+  }
+  return TRUSTED_ORIGINS.includes(origin);
+}
+
+function requestPublicOrigin(req) {
+  const proto = String(req.headers["x-forwarded-proto"] || (req.socket.encrypted ? "https" : "http")).split(",")[0].trim();
+  const host = String(req.headers["x-forwarded-host"] || req.headers.host || "").split(",")[0].trim();
+  return host ? `${proto}://${host}` : "";
+}
+
+function corsHeaders(req) {
+  const origin = requestOrigin(req);
+  if (!origin || !isRequestOriginAllowed(req)) {
+    return {};
+  }
+  return {
+    "Access-Control-Allow-Origin": origin,
+    "Access-Control-Allow-Credentials": "true",
+    "Vary": "Origin"
+  };
+}
+
+function securityHeaders() {
+  const headers = {
+    "Content-Security-Policy": "default-src 'self'; base-uri 'self'; connect-src 'self' ws: wss:; form-action 'self'; frame-ancestors 'none'; object-src 'none'; script-src 'self'; style-src 'self'",
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY",
+    "Referrer-Policy": "same-origin",
+    "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
+    "Cross-Origin-Opener-Policy": "same-origin"
+  };
+  if (IS_PRODUCTION) {
+    headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains";
+  }
+  return headers;
+}
+
+function responseHeaders(extra = {}, req = null) {
+  return {
+    ...securityHeaders(),
+    ...(req ? corsHeaders(req) : {}),
+    ...extra
+  };
+}
+
+function handleOptions(req, res) {
+  if (!isRequestOriginAllowed(req)) {
+    sendText(res, 403, "Forbidden", {}, req);
+    return;
+  }
+  res.writeHead(204, responseHeaders({
+    "Access-Control-Allow-Methods": "GET,POST,PATCH,OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type",
+    "Access-Control-Max-Age": "86400",
+    "Cache-Control": "no-store"
+  }, req));
+  res.end();
+}
+
 function setSessionCookie(res, token) {
-  const secure = process.env.SESSION_COOKIE_SECURE === "true" ? "; Secure" : "";
+  const secure = (IS_PRODUCTION || process.env.SESSION_COOKIE_SECURE === "true") ? "; Secure" : "";
   res.setHeader("Set-Cookie", `meshok_session=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=2592000${secure}`);
 }
 
 function clearSessionCookie(res) {
-  res.setHeader("Set-Cookie", "meshok_session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0");
+  const secure = (IS_PRODUCTION || process.env.SESSION_COOKIE_SECURE === "true") ? "; Secure" : "";
+  res.setHeader("Set-Cookie", `meshok_session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${secure}`);
 }
 
 function checkRateLimit(req, res, scope) {
@@ -1169,11 +1302,11 @@ function checkRateLimit(req, res, scope) {
   }
 
   const retryAfter = Math.max(1, Math.ceil((bucket.resetAt - now) / 1000));
-  res.writeHead(429, {
+  res.writeHead(429, responseHeaders({
     "Content-Type": "application/json; charset=utf-8",
     "Cache-Control": "no-store",
     "Retry-After": String(retryAfter)
-  });
+  }, req));
   res.end(JSON.stringify({ error: "Слишком много попыток. Попробуй позже.", retryAfter }));
   return false;
 }
@@ -1238,19 +1371,23 @@ function readJson(req) {
   });
 }
 
-function sendJson(res, status, payload) {
-  res.writeHead(status, {
+function sendJson(res, status, payload, extraHeaders = {}, req = null) {
+  const sourceReq = req || res._request || null;
+  res.writeHead(status, responseHeaders({
     "Content-Type": "application/json; charset=utf-8",
-    "Cache-Control": "no-store"
-  });
+    "Cache-Control": "no-store",
+    ...extraHeaders
+  }, sourceReq));
   res.end(JSON.stringify(payload));
 }
 
-function sendText(res, status, text) {
-  res.writeHead(status, {
+function sendText(res, status, text, extraHeaders = {}, req = null) {
+  const sourceReq = req || res._request || null;
+  res.writeHead(status, responseHeaders({
     "Content-Type": "text/plain; charset=utf-8",
-    "Cache-Control": "no-store"
-  });
+    "Cache-Control": "no-store",
+    ...extraHeaders
+  }, sourceReq));
   res.end(text);
 }
 

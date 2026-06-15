@@ -110,6 +110,37 @@ npm test
 npm run simulate -- --games=80 --players=4 --seed=42 --length=quick --victory=classic
 ```
 
+## Production
+
+Минимальный production-контур подготовлен под Docker и Render:
+
+- `Dockerfile` запускает Node.js сервер в `NODE_ENV=production`.
+- `render.yaml` описывает web service, managed Postgres и healthcheck `/api/health`.
+- `.env.production.example` содержит список production-переменных.
+- `.github/workflows/ci.yml` запускает `npm ci` и `npm test` на push/PR в `main`.
+
+Обязательные переменные для production:
+
+```env
+NODE_ENV=production
+DATABASE_URL=postgres://user:password@host:5432/database
+DATABASE_SSL=true
+PUBLIC_ORIGIN=https://your-domain.example
+CORS_ORIGINS=https://your-domain.example
+SESSION_COOKIE_SECURE=true
+EMAIL_DEV_MODE=false
+```
+
+В production сервер требует `DATABASE_URL`, выставляет `Secure` для session cookie, добавляет базовые security headers, проверяет origin для HTTP/WebSocket и корректно закрывает HTTP, WebSocket и пул Postgres при `SIGTERM`/`SIGINT`.
+
+После деплоя нужно отдельно настроить:
+
+- домен и DNS на стороне хостинга;
+- HTTPS на стороне Render/Railway/Fly/VPS;
+- отправку email для подтверждения и сброса пароля;
+- мониторинг ошибок, например Sentry;
+- backup Postgres: managed backups у провайдера или регулярный `pg_dump` для VPS.
+
 ## Структура проекта
 
 - `backend/server.js` - HTTP-сервер, API комнат и раздача frontend.

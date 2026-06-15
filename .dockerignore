@@ -1,0 +1,14 @@
+node_modules
+npm-debug.log*
+server.*.log
+.git
+.github
+.idea
+.vscode
+.gigaide
+.env
+.env.*
+!.env.production.example
+coverage
+dist
+build
