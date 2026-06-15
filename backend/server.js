@@ -4,6 +4,7 @@ const path = require("path");
 const crypto = require("crypto");
 const WebSocket = require("ws");
 const db = require("./db");
+const logger = require("./logger");
 const {
   createGame,
   addPlayer,
@@ -53,8 +54,10 @@ const EMAIL_DEV_MODE = process.env.EMAIL_DEV_MODE !== "false" && !IS_PRODUCTION;
 let isShuttingDown = false;
 
 const server = http.createServer(async (req, res) => {
+  const startedAt = Date.now();
   try {
     res._request = req;
+    attachRequestLogging(req, res, startedAt);
     if (isShuttingDown) {
       sendJson(res, 503, { error: "Сервер завершает работу." }, { "Connection": "close" });
       return;
@@ -111,7 +114,11 @@ server.on("upgrade", async (req, socket, head) => {
       wsServer.emit("connection", ws, req, { game, user, url });
     });
   } catch (error) {
-    console.error("WebSocket upgrade failed:", error);
+    logger.error("WebSocket upgrade failed", {
+      error,
+      path: safePath(req.url),
+      ip: clientIp(req)
+    });
     socket.destroy();
   }
 });
@@ -137,8 +144,20 @@ wsServer.on("close", () => {
 
 if (require.main === module) {
   startServer().catch((error) => {
-    console.error(error);
+    logger.error("Server startup failed", { error });
     process.exitCode = 1;
+  });
+  process.on("unhandledRejection", (reason) => {
+    logger.error("Unhandled promise rejection", {
+      error: reason instanceof Error ? reason : new Error(String(reason))
+    });
+  });
+  process.on("uncaughtException", (error) => {
+    logger.error("Uncaught exception", { error });
+    shutdown("uncaughtException").catch((shutdownError) => {
+      logger.error("Shutdown after uncaught exception failed", { error: shutdownError });
+      process.exit(1);
+    });
   });
   process.once("SIGTERM", () => shutdown("SIGTERM"));
   process.once("SIGINT", () => shutdown("SIGINT"));
@@ -149,7 +168,7 @@ async function startServer(port = PORT) {
   await loadRooms();
   return new Promise((resolve) => {
     const instance = server.listen(port, () => {
-      console.log(`Мешок Деняк is running at http://localhost:${port}`);
+      logger.info("Server started", { port });
       resolve(instance);
     });
   });
@@ -160,10 +179,10 @@ async function shutdown(signal) {
     return;
   }
   isShuttingDown = true;
-  console.log(`Received ${signal}, shutting down...`);
+  logger.info("Shutdown started", { signal });
 
   const forceTimer = setTimeout(() => {
-    console.error("Graceful shutdown timed out.");
+    logger.error("Graceful shutdown timed out");
     process.exit(1);
   }, Number(process.env.SHUTDOWN_TIMEOUT_MS || 10_000));
   forceTimer.unref();
@@ -177,6 +196,7 @@ async function shutdown(signal) {
   clearInterval(heartbeatTimer);
   await db.closeDb();
   clearTimeout(forceTimer);
+  logger.info("Shutdown complete", { signal });
   process.exit(0);
 }
 
@@ -186,7 +206,7 @@ async function handleApi(req, res, url) {
       await db.healthCheck();
       sendJson(res, 200, { ok: true, database: "ok" });
     } catch (error) {
-      console.error("Healthcheck failed:", error);
+      logger.error("Healthcheck failed", { error });
       sendJson(res, 503, { ok: false, database: "error" });
     }
     return;
@@ -866,7 +886,7 @@ async function loadRooms() {
       rooms.set(room.roomCode, room);
     }
   }
-  console.log(`Loaded ${rooms.size} saved room(s).`);
+  logger.info("Rooms loaded", { count: rooms.size });
 }
 
 async function persistGame(game) {
@@ -1201,8 +1221,54 @@ function parseTrustedOrigins(raw) {
     .filter(Boolean);
 }
 
+function attachRequestLogging(req, res, startedAt) {
+  let statusCode = 0;
+  const originalWriteHead = res.writeHead;
+  res.writeHead = function patchedWriteHead(status, ...args) {
+    statusCode = status;
+    return originalWriteHead.call(this, status, ...args);
+  };
+
+  let logged = false;
+  const log = (event) => {
+    if (logged) {
+      return;
+    }
+    logged = true;
+    const durationMs = Date.now() - startedAt;
+    const status = statusCode || res.statusCode || 0;
+    const fields = {
+      method: req.method,
+      path: safePath(req.url),
+      status,
+      durationMs,
+      ip: clientIp(req),
+      userAgent: req.headers["user-agent"],
+      event
+    };
+    if (status >= 500) {
+      logger.error("HTTP request failed", fields);
+    } else if (status >= 400) {
+      logger.warn("HTTP request rejected", fields);
+    } else {
+      logger.info("HTTP request completed", fields);
+    }
+  };
+
+  res.on("finish", () => log("finish"));
+  res.on("close", () => log("close"));
+}
+
 function requestOrigin(req) {
   return req.headers.origin || "";
+}
+
+function safePath(rawUrl) {
+  try {
+    return new URL(rawUrl, "http://localhost").pathname;
+  } catch {
+    return "/";
+  }
 }
 
 function isRequestOriginAllowed(req) {
@@ -1320,7 +1386,11 @@ function clientIp(req) {
 }
 
 function handleUnexpectedError(res, error) {
-  console.error(error);
+  logger.error("Unexpected request error", {
+    error,
+    method: res._request?.method,
+    path: res._request ? safePath(res._request.url) : undefined
+  });
   if (res.headersSent) {
     res.end();
     return;

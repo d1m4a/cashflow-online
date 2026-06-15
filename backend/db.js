@@ -1,6 +1,7 @@
 const fs = require("fs");
 const path = require("path");
 const { Pool } = require("pg");
+const logger = require("./logger");
 
 const isProduction = process.env.NODE_ENV === "production";
 const DATABASE_URL = process.env.DATABASE_URL || (isProduction ? "" : "postgres://cashflow:cashflow@localhost:15432/cashflow_online");
@@ -346,7 +347,7 @@ async function runMigrations() {
         [migration, Date.now()]
       );
       await client.query("COMMIT");
-      console.log(`Applied migration ${migration}`);
+      logger.info("Applied database migration", { migration });
     } catch (error) {
       await client.query("ROLLBACK");
       throw error;

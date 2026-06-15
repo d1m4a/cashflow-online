@@ -19,6 +19,10 @@ services:
         value: false
       - key: SHUTDOWN_TIMEOUT_MS
         value: 10000
+      - key: LOG_LEVEL
+        value: info
+      - key: LOG_FORMAT
+        value: json
 
 databases:
   - name: cashflow-online-db

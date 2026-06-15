@@ -67,6 +67,8 @@ EMAIL_TOKEN_TTL_MS=86400000
 PASSWORD_RESET_TTL_MS=3600000
 EMAIL_DEV_MODE=true
 WS_HEARTBEAT_MS=30000
+LOG_LEVEL=debug
+LOG_FORMAT=pretty
 ```
 
 В dev-режиме ссылки подтверждения email и сброса пароля возвращаются в ответе API, чтобы их можно было тестировать без SMTP-провайдера. Для production нужно подключить отправку email и выставить `EMAIL_DEV_MODE=false`.
@@ -129,16 +131,23 @@ PUBLIC_ORIGIN=https://your-domain.example
 CORS_ORIGINS=https://your-domain.example
 SESSION_COOKIE_SECURE=true
 EMAIL_DEV_MODE=false
+LOG_LEVEL=info
+LOG_FORMAT=json
 ```
 
-В production сервер требует `DATABASE_URL`, выставляет `Secure` для session cookie, добавляет базовые security headers, проверяет origin для HTTP/WebSocket и корректно закрывает HTTP, WebSocket и пул Postgres при `SIGTERM`/`SIGINT`.
+В production сервер требует `DATABASE_URL`, выставляет `Secure` для session cookie, добавляет базовые security headers, проверяет origin для HTTP/WebSocket, пишет структурные JSON-логи и корректно закрывает HTTP, WebSocket и пул Postgres при `SIGTERM`/`SIGINT`.
+
+Логи управляются переменными:
+
+- `LOG_LEVEL` - `debug`, `info`, `warn` или `error`.
+- `LOG_FORMAT` - `pretty` для локальной разработки или `json` для production/log drains.
 
 После деплоя нужно отдельно настроить:
 
 - домен и DNS на стороне хостинга;
 - HTTPS на стороне Render/Railway/Fly/VPS;
 - отправку email для подтверждения и сброса пароля;
-- мониторинг ошибок, например Sentry;
+- мониторинг ошибок, например Sentry, Better Stack, Axiom или Render log drain;
 - backup Postgres: managed backups у провайдера или регулярный `pg_dump` для VPS.
 
 ## Структура проекта
