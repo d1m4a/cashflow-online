@@ -986,6 +986,10 @@ async function recordFinishedGame(game) {
 
   const finishedAt = Date.now();
   const winner = game.players.find((player) => player.id === game.winnerId);
+  const rankedPlayers = [...game.players]
+    .map((player) => ({ player, netWorth: playerNetWorth(player) }))
+    .sort((a, b) => b.netWorth - a.netWorth);
+  const rankByPlayerId = new Map(rankedPlayers.map((item, index) => [item.player.id, index + 1]));
   const records = [];
   for (const player of game.players) {
     if (!player.accountId) {
@@ -1001,11 +1005,22 @@ async function recordFinishedGame(game) {
       won,
       winnerName: winner?.name || "Игрок",
       playerName: player.name,
+      professionId: player.professionId,
+      profession: player.profession,
+      finishReason: game.finishReason || "unknown",
+      victoryMode: game.settings?.victoryMode || "classic",
+      gameLength: game.settings?.gameLength || "open",
+      turnCount: game.turnCount || 0,
+      round: game.round || 1,
+      playerCount: game.players.length,
       netWorth,
       cash: player.cash,
       passiveIncome: player.passiveIncome,
       projectIncome: player.projectIncome || 0,
       projectAssets: player.assets.filter((asset) => asset.type === "project-league").length,
+      bankruptcyCount: player.bankruptcyCount || 0,
+      finalRank: rankByPlayerId.get(player.id) || 1,
+      capitalTimeline: capitalTimelineForPlayer(game, player),
       reputation: player.reputation || 0
     });
   }
@@ -1017,6 +1032,47 @@ function playerNetWorth(player) {
   const assetValue = player.assets.reduce((sum, asset) => sum + (asset.marketValue || asset.cost || 0), 0);
   const liabilities = player.liabilities.reduce((sum, liability) => sum + (liability.balance || 0), 0);
   return player.cash + assetValue - liabilities;
+}
+
+function capitalTimelineForPlayer(game, player) {
+  const snapshots = Array.isArray(game.historySnapshots) ? game.historySnapshots : [];
+  const timeline = snapshots
+    .map((snapshot) => {
+      const row = snapshot.players?.find((item) => item.id === player.id);
+      if (!row) {
+        return null;
+      }
+      return {
+        kind: snapshot.kind || "turn",
+        turnCount: snapshot.turnCount || 0,
+        round: snapshot.round || 1,
+        createdAt: snapshot.createdAt || game.updatedAt || Date.now(),
+        netWorth: row.netWorth,
+        cash: row.cash,
+        passiveIncome: row.passiveIncome,
+        projectIncome: row.projectIncome || 0,
+        projectAssets: row.projectAssets || 0,
+        bankruptcyCount: row.bankruptcyCount || 0
+      };
+    })
+    .filter(Boolean);
+
+  if (timeline.length > 0) {
+    return timeline;
+  }
+
+  return [{
+    kind: "finish",
+    turnCount: game.turnCount || 0,
+    round: game.round || 1,
+    createdAt: game.updatedAt || Date.now(),
+    netWorth: playerNetWorth(player),
+    cash: player.cash,
+    passiveIncome: player.passiveIncome,
+    projectIncome: player.projectIncome || 0,
+    projectAssets: player.assets.filter((asset) => asset.type === "project-league").length,
+    bankruptcyCount: player.bankruptcyCount || 0
+  }];
 }
 
 function canReadRoom(game, userId) {

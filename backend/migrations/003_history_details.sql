@@ -1,0 +1,15 @@
+ALTER TABLE game_history
+  ADD COLUMN IF NOT EXISTS profession_id TEXT,
+  ADD COLUMN IF NOT EXISTS profession TEXT,
+  ADD COLUMN IF NOT EXISTS finish_reason TEXT NOT NULL DEFAULT 'unknown',
+  ADD COLUMN IF NOT EXISTS victory_mode TEXT NOT NULL DEFAULT 'classic',
+  ADD COLUMN IF NOT EXISTS game_length TEXT NOT NULL DEFAULT 'open',
+  ADD COLUMN IF NOT EXISTS turn_count INTEGER NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS round INTEGER NOT NULL DEFAULT 1,
+  ADD COLUMN IF NOT EXISTS player_count INTEGER NOT NULL DEFAULT 1,
+  ADD COLUMN IF NOT EXISTS bankruptcy_count INTEGER NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS final_rank INTEGER NOT NULL DEFAULT 1,
+  ADD COLUMN IF NOT EXISTS capital_timeline JSONB NOT NULL DEFAULT '[]'::jsonb;
+
+CREATE INDEX IF NOT EXISTS idx_game_history_user_profession ON game_history(user_id, profession_id);
+CREATE INDEX IF NOT EXISTS idx_game_history_user_won ON game_history(user_id, won);

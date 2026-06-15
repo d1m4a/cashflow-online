@@ -555,6 +555,9 @@ function ensureRoomShape(game) {
   if (!Array.isArray(game.debugLog)) {
     game.debugLog = [];
   }
+  if (!Array.isArray(game.historySnapshots)) {
+    game.historySnapshots = [];
+  }
 }
 
 function normalizeGameSettings(options = {}) {
@@ -593,6 +596,7 @@ function createGame(roomCode, hostName, professionId, hostAccountId = null, opti
     winnerId: null,
     log: [`Комната ${roomCode} создана.`],
     debugLog: [],
+    historySnapshots: [],
     chat: [],
     createdAt: Date.now(),
     updatedAt: Date.now()
@@ -761,8 +765,10 @@ function startGame(game, hostId) {
   game.players.forEach((player) => {
     player.ready = false;
   });
+  game.historySnapshots = [];
   game.log.unshift("Игра началась.");
   recordDebug(game, "game.start", { hostId, players: game.players.map((player) => player.id), settings: game.settings });
+  captureHistorySnapshot(game, "start");
   touch(game);
 }
 
@@ -778,6 +784,7 @@ function restartGame(game, hostId) {
   game.winnerId = null;
   delete game.finishReason;
   delete game.resultRecordedAt;
+  game.historySnapshots = [];
   game.log.unshift(previousWinner ? `Новая партия создана. Прошлый победитель: ${previousWinner.name}.` : "Новая партия создана.");
   recordDebug(game, "game.restart", { hostId, previousWinnerId: previousWinner?.id || null });
   touch(game);
@@ -1262,6 +1269,9 @@ function advanceTurn(game) {
   game.turnCount += 1;
   game.round = Math.floor(game.turnCount / Math.max(1, game.players.length)) + 1;
   checkTurnLimit(game);
+  if (game.status !== "finished") {
+    captureHistorySnapshot(game, "turn");
+  }
 }
 
 function checkProgress(game, player) {
@@ -1448,15 +1458,47 @@ function checkTurnLimit(game) {
 }
 
 function finishGame(game, winnerId, reason) {
+  if (game.status === "finished") {
+    return;
+  }
   game.status = "finished";
   game.winnerId = winnerId;
   game.finishReason = reason;
+  captureHistorySnapshot(game, "finish");
 }
 
 function playerNetWorth(player) {
   const assetValue = player.assets.reduce((sum, asset) => sum + (asset.marketValue || asset.cost || 0), 0);
   const liabilities = player.liabilities.reduce((sum, liability) => sum + (liability.balance || 0), 0);
   return player.cash + assetValue - liabilities;
+}
+
+function captureHistorySnapshot(game, kind = "turn") {
+  ensureRoomShape(game);
+  const snapshot = {
+    kind,
+    turnCount: game.turnCount || 0,
+    round: game.round || 1,
+    status: game.status,
+    currentPlayerId: currentPlayer(game)?.id || null,
+    createdAt: Date.now(),
+    players: game.players.map((player) => ({
+      id: player.id,
+      name: player.name,
+      professionId: player.professionId,
+      profession: player.profession,
+      track: player.track || "money-yard",
+      netWorth: playerNetWorth(player),
+      cash: player.cash,
+      passiveIncome: player.passiveIncome,
+      projectIncome: player.projectIncome || 0,
+      projectAssets: projectAssetCount(player),
+      reputation: player.reputation || 0,
+      bankruptcyCount: player.bankruptcyCount || 0
+    }))
+  };
+  game.historySnapshots.push(snapshot);
+  game.historySnapshots = game.historySnapshots.slice(-160);
 }
 
 function validateGameState(game) {

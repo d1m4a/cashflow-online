@@ -28,6 +28,12 @@ function makeStartedGame(professionId = "event-host") {
   return game;
 }
 
+function playerNetWorthForTest(player) {
+  const assetValue = player.assets.reduce((sum, asset) => sum + (asset.marketValue || asset.cost || 0), 0);
+  const liabilities = player.liabilities.reduce((sum, liability) => sum + (liability.balance || 0), 0);
+  return player.cash + assetValue - liabilities;
+}
+
 test("only host starts when joined players are ready", () => {
   const game = createGame("ABCDE", "Alice", "event-host");
   const bob = addPlayer(game, "Bob", "repair-master");
@@ -375,6 +381,25 @@ test("game settings support turn-limit net worth victory", () => {
   assert.equal(game.winnerId, player.id);
   assert.equal(game.finishReason, "turn-limit");
   assert.equal(game.turnCount, 1);
+});
+
+test("game stores capital snapshots for history charts", () => {
+  const game = makeStartedGame();
+  const player = game.players[0];
+
+  assert.equal(game.historySnapshots.length, 1);
+  assert.equal(game.historySnapshots[0].kind, "start");
+  assert.equal(game.historySnapshots[0].players[0].netWorth, playerNetWorthForTest(player));
+
+  player.track = "project-league";
+  player.cash = player.grandGoal.cost;
+  buyGrandGoal(game, player.id);
+
+  const finishSnapshot = game.historySnapshots.at(-1);
+  assert.equal(game.status, "finished");
+  assert.equal(finishSnapshot.kind, "finish");
+  assert.equal(finishSnapshot.players[0].id, player.id);
+  assert.equal(finishSnapshot.players[0].netWorth, playerNetWorthForTest(player));
 });
 
 test("victory modes can disable portfolio or goal wins", () => {

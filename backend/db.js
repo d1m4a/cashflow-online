@@ -188,9 +188,12 @@ async function addHistoryRecords(game, records) {
     for (const record of records) {
       await client.query(
         `INSERT INTO game_history
-          (id, user_id, room_code, won, winner_name, player_name, net_worth, cash, passive_income,
-           project_income, project_assets, reputation, finished_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+          (id, user_id, room_code, won, winner_name, player_name, profession_id, profession,
+           finish_reason, victory_mode, game_length, turn_count, round, player_count,
+           net_worth, cash, passive_income, project_income, project_assets,
+           bankruptcy_count, final_rank, capital_timeline, reputation, finished_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
+                 $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24)
          ON CONFLICT (id) DO NOTHING`,
         [
           record.id,
@@ -199,11 +202,22 @@ async function addHistoryRecords(game, records) {
           record.won,
           record.winnerName,
           record.playerName,
+          record.professionId,
+          record.profession,
+          record.finishReason,
+          record.victoryMode,
+          record.gameLength,
+          record.turnCount,
+          record.round,
+          record.playerCount,
           record.netWorth,
           record.cash,
           record.passiveIncome,
           record.projectIncome,
           record.projectAssets,
+          record.bankruptcyCount,
+          record.finalRank,
+          JSON.stringify(record.capitalTimeline || []),
           record.reputation,
           record.finishedAt
         ]
@@ -245,18 +259,56 @@ async function getUserStats(userId) {
        COUNT(*) FILTER (WHERE won)::int AS wins,
        COALESCE(MAX(net_worth), 0)::int AS best_net_worth,
        COALESCE(MAX(passive_income), 0)::int AS best_passive_income,
-       COALESCE(MAX(project_income), 0)::int AS best_project_income
+       COALESCE(MAX(project_income), 0)::int AS best_project_income,
+       COALESCE(ROUND(AVG(net_worth)), 0)::int AS average_net_worth,
+       COALESCE(ROUND(AVG(passive_income)), 0)::int AS average_passive_income,
+       COALESCE(ROUND(AVG(project_income)), 0)::int AS average_project_income,
+       COALESCE(ROUND(AVG(turn_count)), 0)::int AS average_turns,
+       COALESCE(SUM(bankruptcy_count), 0)::int AS bankruptcy_count
      FROM game_history
      WHERE user_id = $1`,
     [userId]
   );
+  const professionResult = await pool.query(
+    `SELECT
+       profession_id,
+       COALESCE(profession, profession_id, 'Профессия') AS profession,
+       COUNT(*)::int AS games,
+       COUNT(*) FILTER (WHERE won)::int AS wins,
+       COALESCE(ROUND(AVG(net_worth)), 0)::int AS average_net_worth,
+       COALESCE(MAX(net_worth), 0)::int AS best_net_worth,
+       COALESCE(ROUND(AVG(final_rank)), 0)::int AS average_rank
+     FROM game_history
+     WHERE user_id = $1
+     GROUP BY profession_id, profession
+     ORDER BY games DESC, wins DESC, best_net_worth DESC`,
+    [userId]
+  );
   const row = result.rows[0] || {};
+  const games = row.games || 0;
+  const wins = row.wins || 0;
   return {
-    games: row.games || 0,
-    wins: row.wins || 0,
+    games,
+    wins,
+    winRate: games ? wins / games : 0,
     bestNetWorth: row.best_net_worth || 0,
     bestPassiveIncome: row.best_passive_income || 0,
-    bestProjectIncome: row.best_project_income || 0
+    bestProjectIncome: row.best_project_income || 0,
+    averageNetWorth: row.average_net_worth || 0,
+    averagePassiveIncome: row.average_passive_income || 0,
+    averageProjectIncome: row.average_project_income || 0,
+    averageTurns: row.average_turns || 0,
+    bankruptcyCount: row.bankruptcy_count || 0,
+    professionStats: professionResult.rows.map((item) => ({
+      professionId: item.profession_id,
+      profession: item.profession,
+      games: item.games || 0,
+      wins: item.wins || 0,
+      winRate: item.games ? item.wins / item.games : 0,
+      averageNetWorth: item.average_net_worth || 0,
+      bestNetWorth: item.best_net_worth || 0,
+      averageRank: item.average_rank || 0
+    }))
   };
 }
 
@@ -344,11 +396,22 @@ function rowToHistoryRecord(row) {
     won: row.won,
     winnerName: row.winner_name,
     playerName: row.player_name,
+    professionId: row.profession_id,
+    profession: row.profession,
+    finishReason: row.finish_reason,
+    victoryMode: row.victory_mode,
+    gameLength: row.game_length,
+    turnCount: row.turn_count,
+    round: row.round,
+    playerCount: row.player_count,
     netWorth: row.net_worth,
     cash: row.cash,
     passiveIncome: row.passive_income,
     projectIncome: row.project_income,
     projectAssets: row.project_assets,
+    bankruptcyCount: row.bankruptcy_count,
+    finalRank: row.final_rank,
+    capitalTimeline: row.capital_timeline || [],
     reputation: row.reputation
   };
 }
