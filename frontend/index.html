@@ -131,6 +131,23 @@
             <ul class="profile-list compact-list" id="profileProfessionStats"></ul>
           </article>
           <article class="profile-card">
+            <h2>График капитала</h2>
+            <div class="capital-chart" id="profileCapitalChart"></div>
+          </article>
+          <article class="profile-card">
+            <h2>Стратегии</h2>
+            <ul class="profile-list compact-list" id="profileStrategies"></ul>
+          </article>
+          <article class="profile-card">
+            <h2>Достижения</h2>
+            <ul class="achievement-list" id="profileAchievements"></ul>
+          </article>
+          <article class="profile-card">
+            <h2>Публичный профиль</h2>
+            <input id="publicProfileUrl" readonly aria-label="Публичная ссылка">
+            <button id="openPublicProfileButton" type="button" class="secondary">Открыть</button>
+          </article>
+          <article class="profile-card">
             <h2>Безопасность</h2>
             <p id="emailStatus" class="profile-note"></p>
             <div class="security-actions">
@@ -196,6 +213,42 @@
           <button id="historyResetFiltersButton" type="button" class="secondary">Сбросить</button>
         </div>
         <ul class="profile-list history-page-list" id="historyList"></ul>
+      </section>
+
+      <section class="panel setup-panel hidden" id="publicProfilePanel">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Публичный профиль</p>
+            <h1 id="publicProfileTitle">Игрок</h1>
+          </div>
+          <p class="status-pill" id="publicProfileStatsBadge">0 партий</p>
+        </div>
+        <div class="profile-grid">
+          <article class="profile-card">
+            <h2>Статистика</h2>
+            <div class="report-grid" id="publicProfileStats"></div>
+          </article>
+          <article class="profile-card">
+            <h2>График капитала</h2>
+            <div class="capital-chart" id="publicCapitalChart"></div>
+          </article>
+          <article class="profile-card">
+            <h2>Профессии</h2>
+            <ul class="profile-list compact-list" id="publicProfessionStats"></ul>
+          </article>
+          <article class="profile-card">
+            <h2>Стратегии</h2>
+            <ul class="profile-list compact-list" id="publicStrategies"></ul>
+          </article>
+          <article class="profile-card">
+            <h2>Достижения</h2>
+            <ul class="achievement-list" id="publicAchievements"></ul>
+          </article>
+          <article class="profile-card">
+            <h2>Последние партии</h2>
+            <ul class="profile-list" id="publicHistory"></ul>
+          </article>
+        </div>
       </section>
 
       <section class="panel setup-panel hidden" id="rulesPanel">

@@ -464,6 +464,99 @@ h2 {
   line-height: 1.4;
 }
 
+.capital-chart {
+  min-height: 170px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(4, 9, 18, 0.42);
+  padding: 10px;
+}
+
+.capital-chart svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  min-height: 150px;
+}
+
+.capital-chart text {
+  fill: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.chart-grid {
+  fill: none;
+  stroke: rgba(145, 160, 184, 0.24);
+  stroke-width: 1;
+}
+
+.chart-line {
+  fill: none;
+  stroke: var(--green);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 4;
+}
+
+.chart-point {
+  fill: var(--gold);
+  stroke: rgba(255, 255, 255, 0.8);
+  stroke-width: 1.5;
+}
+
+.chart-empty {
+  display: grid;
+  min-height: 140px;
+  place-items: center;
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.mini-chart {
+  min-height: 120px;
+}
+
+.mini-chart svg {
+  min-height: 120px;
+}
+
+.achievement-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.achievement-list li {
+  display: grid;
+  gap: 5px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: rgba(12, 20, 34, 0.72);
+  color: var(--muted);
+  padding: 10px;
+}
+
+.achievement-list li.earned {
+  border-color: rgba(240, 181, 76, 0.52);
+  background: rgba(65, 45, 15, 0.36);
+}
+
+.achievement-list strong {
+  color: var(--ink);
+}
+
+.achievement-list li.earned strong {
+  color: var(--gold);
+}
+
+.achievement-list span {
+  line-height: 1.35;
+}
+
 .rooms-browser {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1391,7 +1484,8 @@ h2 {
   .result-actions,
   .decision-grid,
   .rules-mini-grid,
-  .onboarding-grid {
+  .onboarding-grid,
+  .achievement-list {
     grid-template-columns: 1fr;
   }
 

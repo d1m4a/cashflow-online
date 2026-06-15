@@ -441,6 +441,17 @@ async function handleApi(req, res, url) {
 }
 
 async function handleAuthApi(req, res, url) {
+  const publicProfileMatch = url.pathname.match(/^\/api\/users\/([^/]+)\/public$/);
+  if (req.method === "GET" && publicProfileMatch) {
+    const user = await db.findUserById(publicProfileMatch[1]);
+    if (!user) {
+      sendJson(res, 404, { error: "Профиль не найден." });
+      return;
+    }
+    sendJson(res, 200, { user: await serializePublicUser(user) });
+    return;
+  }
+
   if (req.method === "POST" && (
     url.pathname === "/api/auth/register" ||
     url.pathname === "/api/auth/login" ||
@@ -875,6 +886,15 @@ async function serializeUser(user) {
     stats: await db.getUserStats(user.id),
     history: await db.getUserHistory(user.id, 20),
     rooms: savedRoomsForUser(user.id)
+  };
+}
+
+async function serializePublicUser(user) {
+  return {
+    id: user.id,
+    name: user.name,
+    stats: await db.getUserStats(user.id),
+    history: await db.getUserHistory(user.id, 12)
   };
 }
 
