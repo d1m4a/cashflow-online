@@ -33,12 +33,18 @@ const profileTitle = document.querySelector("#profileTitle");
 const profileEmail = document.querySelector("#profileEmail");
 const profileName = document.querySelector("#profileName");
 const profileStats = document.querySelector("#profileStats");
+const profileProfessionStats = document.querySelector("#profileProfessionStats");
 const profileRooms = document.querySelector("#profileRooms");
 const profileHistory = document.querySelector("#profileHistory");
 const historyPanel = document.querySelector("#historyPanel");
 const historyNav = document.querySelector("#historyNav");
 const historyCount = document.querySelector("#historyCount");
 const historyList = document.querySelector("#historyList");
+const historySummary = document.querySelector("#historySummary");
+const historyResultFilter = document.querySelector("#historyResultFilter");
+const historyProfessionFilter = document.querySelector("#historyProfessionFilter");
+const historyVictoryFilter = document.querySelector("#historyVictoryFilter");
+const historyResetFiltersButton = document.querySelector("#historyResetFiltersButton");
 const rulesPanel = document.querySelector("#rulesPanel");
 const rulesNav = document.querySelector("#rulesNav");
 const rulesCount = document.querySelector("#rulesCount");
@@ -265,6 +271,17 @@ profileNav.addEventListener("click", (event) => {
 historyNav.addEventListener("click", (event) => {
   event.preventDefault();
   navigateTo("/history");
+});
+
+[historyResultFilter, historyProfessionFilter, historyVictoryFilter].forEach((filter) => {
+  filter.addEventListener("change", renderHistoryPage);
+});
+
+historyResetFiltersButton.addEventListener("click", () => {
+  historyResultFilter.value = "all";
+  historyProfessionFilter.value = "all";
+  historyVictoryFilter.value = "all";
+  renderHistoryPage();
 });
 
 rulesNav.addEventListener("click", (event) => {
@@ -859,10 +876,22 @@ function renderProfile() {
   profileStats.innerHTML = `
     <span>Игр<strong>${stats.games || 0}</strong></span>
     <span>Побед<strong>${stats.wins || 0}</strong></span>
+    <span>Винрейт<strong>${percent(stats.winRate || 0)}</strong></span>
     <span>Лучший капитал<strong>${money(stats.bestNetWorth || 0)}</strong></span>
     <span>Лучший инвестдоход<strong>${money(stats.bestPassiveIncome || 0)}</strong></span>
     <span>Лучший доход проектов<strong>${money(stats.bestProjectIncome || 0)}</strong></span>
+    <span>Средний капитал<strong>${money(stats.averageNetWorth || 0)}</strong></span>
+    <span>Средняя длительность<strong>${stats.averageTurns || 0} ходов</strong></span>
+    <span>Банкротств<strong>${stats.bankruptcyCount || 0}</strong></span>
   `;
+  profileProfessionStats.innerHTML = stats.professionStats?.length
+    ? stats.professionStats.map((item) => `
+      <li>
+        <span><strong>${escapeHtml(item.profession || "Профессия")}</strong> ${item.games || 0} партий · ${item.wins || 0} побед</span>
+        <small>${percent(item.winRate || 0)} винрейт · средний капитал ${money(item.averageNetWorth || 0)} · лучший ${money(item.bestNetWorth || 0)}</small>
+      </li>
+    `).join("")
+    : "<li>Статистика по профессиям появится после завершения партий</li>";
   profileRooms.innerHTML = state.user.rooms?.length
     ? state.user.rooms.map((room) => `
       <li>
@@ -875,7 +904,7 @@ function renderProfile() {
     ? state.user.history.map((item) => `
       <li>
         <span><strong>${item.won ? "Победа" : "Партия"}</strong> ${escapeHtml(item.roomCode)} · ${formatDate(item.finishedAt)}</span>
-        <small>${money(item.netWorth)} капитал · ${money(item.passiveIncome)} инвестдоход · победитель ${escapeHtml(item.winnerName)}</small>
+        <small>${escapeHtml(item.profession || "Профессия")} · ${money(item.netWorth)} капитал · ${item.turnCount || 0} ходов · победитель ${escapeHtml(item.winnerName)}</small>
       </li>
     `).join("")
     : "<li>История появится после завершения партии</li>";
@@ -899,15 +928,94 @@ function renderProfile() {
 
 function renderHistoryPage() {
   const history = state.user?.history || [];
-  historyCount.textContent = `${history.length} партий`;
-  historyList.innerHTML = history.length
-    ? history.map((item) => `
-      <li>
-        <span><strong>${item.won ? "Победа" : "Партия"}</strong> ${escapeHtml(item.roomCode)} · ${formatDate(item.finishedAt)}</span>
-        <small>${money(item.netWorth)} капитал · ${money(item.passiveIncome)} инвестдоход · ${money(item.projectIncome || 0)} проекты · победитель ${escapeHtml(item.winnerName)}</small>
-      </li>
-    `).join("")
+  renderHistoryFilterOptions(history);
+  const filtered = filteredHistory(history);
+  const wins = filtered.filter((item) => item.won).length;
+  const bestNetWorth = Math.max(0, ...filtered.map((item) => item.netWorth || 0));
+  const averageNetWorth = filtered.length
+    ? Math.round(filtered.reduce((sum, item) => sum + (item.netWorth || 0), 0) / filtered.length)
+    : 0;
+  const averageTurns = filtered.length
+    ? Math.round(filtered.reduce((sum, item) => sum + (item.turnCount || 0), 0) / filtered.length)
+    : 0;
+  const bankruptcies = filtered.reduce((sum, item) => sum + (item.bankruptcyCount || 0), 0);
+
+  historyCount.textContent = `${filtered.length}/${history.length} партий`;
+  historySummary.innerHTML = `
+    <span>Винрейт<strong>${percent(filtered.length ? wins / filtered.length : 0)}</strong></span>
+    <span>Лучший капитал<strong>${money(bestNetWorth)}</strong></span>
+    <span>Средний капитал<strong>${money(averageNetWorth)}</strong></span>
+    <span>Средняя длительность<strong>${averageTurns} ходов</strong></span>
+    <span>Банкротств<strong>${bankruptcies}</strong></span>
+  `;
+  historyList.innerHTML = filtered.length
+    ? filtered.map(renderHistoryItem).join("")
     : "<li>История появится после завершения партии</li>";
+}
+
+function renderHistoryFilterOptions(history) {
+  const selectedProfession = historyProfessionFilter.value || "all";
+  const selectedVictory = historyVictoryFilter.value || "all";
+  const professions = uniqueBy(history
+    .filter((item) => item.professionId || item.profession)
+    .map((item) => ({ id: item.professionId || item.profession, title: item.profession || item.professionId || "Профессия" })), "id");
+  const victoryModes = uniqueBy(history
+    .filter((item) => item.victoryMode)
+    .map((item) => ({ id: item.victoryMode, title: victoryModeLabel(item.victoryMode) })), "id");
+
+  historyProfessionFilter.innerHTML = `<option value="all">Все профессии</option>${professions
+    .map((item) => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.title)}</option>`)
+    .join("")}`;
+  historyVictoryFilter.innerHTML = `<option value="all">Все режимы</option>${victoryModes
+    .map((item) => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.title)}</option>`)
+    .join("")}`;
+  historyProfessionFilter.value = professions.some((item) => item.id === selectedProfession) ? selectedProfession : "all";
+  historyVictoryFilter.value = victoryModes.some((item) => item.id === selectedVictory) ? selectedVictory : "all";
+}
+
+function filteredHistory(history) {
+  const resultFilter = historyResultFilter.value || "all";
+  const professionFilter = historyProfessionFilter.value || "all";
+  const victoryFilter = historyVictoryFilter.value || "all";
+  return history.filter((item) => {
+    if (resultFilter === "won" && !item.won) return false;
+    if (resultFilter === "lost" && item.won) return false;
+    if (professionFilter !== "all" && (item.professionId || item.profession) !== professionFilter) return false;
+    if (victoryFilter !== "all" && item.victoryMode !== victoryFilter) return false;
+    return true;
+  });
+}
+
+function renderHistoryItem(item) {
+  const timeline = item.capitalTimeline || [];
+  const firstPoint = timeline[0];
+  const lastPoint = timeline[timeline.length - 1];
+  const delta = firstPoint && lastPoint ? lastPoint.netWorth - firstPoint.netWorth : 0;
+  return `
+    <li class="history-item">
+      <details>
+        <summary>
+          <span><strong>${item.won ? "Победа" : "Партия"}</strong> ${escapeHtml(item.roomCode)} · ${formatDate(item.finishedAt)}</span>
+          <small>${escapeHtml(item.profession || "Профессия")} · ${victoryModeLabel(item.victoryMode)} · ${finishReasonLabel(item.finishReason)}</small>
+        </summary>
+        <div class="history-details">
+          <div class="report-grid">
+            <span>Капитал<strong>${money(item.netWorth || 0)}</strong></span>
+            <span>Изменение<strong>${signedMoney(delta)}</strong></span>
+            <span>Инвестдоход<strong>${money(item.passiveIncome || 0)}</strong></span>
+            <span>Доход проектов<strong>${money(item.projectIncome || 0)}</strong></span>
+            <span>Проектов<strong>${item.projectAssets || 0}</strong></span>
+            <span>Место<strong>${item.finalRank || 1}/${item.playerCount || 1}</strong></span>
+            <span>Ходы<strong>${item.turnCount || 0}</strong></span>
+            <span>Раунд<strong>${item.round || 1}</strong></span>
+            <span>Банкротств<strong>${item.bankruptcyCount || 0}</strong></span>
+            <span>Репутация<strong>${item.reputation || 0}</strong></span>
+          </div>
+          <p>Победитель: <strong>${escapeHtml(item.winnerName || "Игрок")}</strong>. Длина партии: ${gameLengthLabel(item.gameLength)}.</p>
+        </div>
+      </details>
+    </li>
+  `;
 }
 
 function renderRulesPage() {
@@ -968,6 +1076,44 @@ function victoryModeDescription(id) {
     portfolio: "победа только через портфель проектов",
     netWorth: "победа по капиталу после лимита ходов"
   }[id] || "особый режим";
+}
+
+function victoryModeLabel(id) {
+  return {
+    classic: "Классика",
+    goal: "Большая цель",
+    portfolio: "Портфель проектов",
+    netWorth: "Капитал к лимиту"
+  }[id] || "Режим";
+}
+
+function finishReasonLabel(id) {
+  return {
+    goal: "цель",
+    portfolio: "портфель",
+    "turn-limit": "лимит ходов",
+    unknown: "итог"
+  }[id] || "итог";
+}
+
+function gameLengthLabel(id) {
+  return {
+    open: "без лимита",
+    quick: "быстрая",
+    standard: "стандартная"
+  }[id] || "обычная";
+}
+
+function uniqueBy(items, key) {
+  const seen = new Set();
+  return items.filter((item) => {
+    const value = item[key];
+    if (!value || seen.has(value)) {
+      return false;
+    }
+    seen.add(value);
+    return true;
+  });
 }
 
 function cellLabel(type) {
@@ -1981,6 +2127,15 @@ function showError(text) {
 
 function money(value) {
   return `$${Number(value).toLocaleString("en-US")}`;
+}
+
+function signedMoney(value) {
+  const amount = Number(value || 0);
+  return `${amount >= 0 ? "+" : "-"}${money(Math.abs(amount))}`;
+}
+
+function percent(value) {
+  return `${Math.round(Number(value || 0) * 100)}%`;
 }
 
 function initials(name) {

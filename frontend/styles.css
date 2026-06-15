@@ -399,6 +399,71 @@ h2 {
   color: var(--muted);
 }
 
+.compact-list li {
+  grid-template-columns: 1fr;
+}
+
+.history-summary {
+  margin-bottom: 14px;
+}
+
+.history-filters {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
+  align-items: end;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.history-item {
+  display: block !important;
+}
+
+.history-item details {
+  display: grid;
+  gap: 10px;
+}
+
+.history-item summary {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 4px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.history-item summary::-webkit-details-marker {
+  display: none;
+}
+
+.history-item summary::after {
+  content: "Подробнее";
+  justify-self: start;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 900;
+  padding: 5px 7px;
+  text-transform: uppercase;
+}
+
+.history-item details[open] summary::after {
+  content: "Свернуть";
+}
+
+.history-details {
+  display: grid;
+  gap: 10px;
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+}
+
+.history-details p {
+  color: var(--muted);
+  line-height: 1.4;
+}
+
 .rooms-browser {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1283,7 +1348,8 @@ h2 {
 
   .rooms-browser,
   .room-list-item,
-  .rules-layout {
+  .rules-layout,
+  .history-filters {
     grid-template-columns: 1fr;
   }
 

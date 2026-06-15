@@ -127,6 +127,10 @@
             <div class="report-grid" id="profileStats"></div>
           </article>
           <article class="profile-card">
+            <h2>Профессии</h2>
+            <ul class="profile-list compact-list" id="profileProfessionStats"></ul>
+          </article>
+          <article class="profile-card">
             <h2>Безопасность</h2>
             <p id="emailStatus" class="profile-note"></p>
             <div class="security-actions">
@@ -170,6 +174,26 @@
             <h1>Партии</h1>
           </div>
           <p class="status-pill" id="historyCount">0 партий</p>
+        </div>
+        <div class="history-summary report-grid" id="historySummary"></div>
+        <div class="history-filters">
+          <label>
+            Результат
+            <select id="historyResultFilter">
+              <option value="all">Все</option>
+              <option value="won">Победы</option>
+              <option value="lost">Поражения</option>
+            </select>
+          </label>
+          <label>
+            Профессия
+            <select id="historyProfessionFilter"></select>
+          </label>
+          <label>
+            Режим победы
+            <select id="historyVictoryFilter"></select>
+          </label>
+          <button id="historyResetFiltersButton" type="button" class="secondary">Сбросить</button>
         </div>
         <ul class="profile-list history-page-list" id="historyList"></ul>
       </section>
