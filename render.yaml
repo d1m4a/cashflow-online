@@ -23,6 +23,10 @@ services:
         value: info
       - key: LOG_FORMAT
         value: json
+      - key: ERROR_TRACKING_DSN
+        sync: false
+      - key: LOG_DRAIN_URL
+        sync: false
 
 databases:
   - name: cashflow-online-db

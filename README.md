@@ -150,6 +150,20 @@ LOG_FORMAT=json
 - мониторинг ошибок, например Sentry, Better Stack, Axiom или Render log drain;
 - backup Postgres: managed backups у провайдера или регулярный `pg_dump` для VPS.
 
+Подробный production-чеклист и граница "что можно сделать локально / что требует внешнего сервиса" лежит в `docs/PRODUCTION.md`.
+
+Локальный backup Postgres:
+
+```bash
+npm run db:backup
+```
+
+Восстановление backup:
+
+```bash
+npm run db:restore -- backups/cashflow-online-YYYY-MM-DD.dump
+```
+
 ## Структура проекта
 
 - `backend/server.js` - HTTP-сервер, API комнат и раздача frontend.
@@ -164,4 +178,5 @@ LOG_FORMAT=json
 - `tools/simulateBalance.js` - CLI-отчёт по симуляции баланса.
 - `test/gameRules.test.js` - тесты ядра правил.
 - `docs/MVP.md` - границы текущего MVP и план развития.
+- `docs/PRODUCTION.md` - production runbook, deploy checklist и backup policy.
 - `docs/RULES.md` - текущие реализованные правила игры в текстовом виде.

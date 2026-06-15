@@ -8,6 +8,8 @@
     "dev": "node backend/server.js",
     "db:up": "docker compose up -d postgres",
     "db:down": "docker compose down",
+    "db:backup": "node tools/backupPostgres.js",
+    "db:restore": "node tools/restorePostgres.js",
     "test": "node --test",
     "simulate": "node tools/simulateBalance.js"
   },
