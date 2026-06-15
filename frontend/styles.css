@@ -222,6 +222,62 @@ h2 {
   margin-bottom: 18px;
 }
 
+.status-strip {
+  display: grid;
+  grid-template-columns: minmax(150px, 0.45fr) minmax(220px, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 12px;
+  padding: 12px 14px;
+  border-left: 4px solid var(--blue);
+}
+
+.status-strip h2 {
+  font-size: 16px;
+}
+
+.status-strip p {
+  color: var(--muted);
+  line-height: 1.35;
+}
+
+.status-waiting {
+  border-left-color: var(--gold);
+}
+
+.status-ready {
+  border-left-color: var(--green);
+}
+
+.status-turn {
+  border-left-color: var(--purple-2);
+}
+
+.status-danger {
+  border-left-color: var(--red);
+}
+
+.status-meta {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: end;
+  gap: 6px;
+}
+
+.status-meta span {
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: rgba(4, 9, 18, 0.54);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  padding: 7px 8px;
+}
+
+.danger-text {
+  color: #ff9ba1 !important;
+}
+
 .setup-panel {
   padding: 18px;
 }
@@ -349,6 +405,56 @@ h2 {
   gap: 14px;
 }
 
+.rules-layout {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.rules-section {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(5, 10, 20, 0.5);
+  padding: 14px;
+}
+
+.rules-copy {
+  display: grid;
+  gap: 10px;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.rules-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding-left: 18px;
+}
+
+.rules-mini-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.rules-mini-grid span {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: rgba(12, 20, 34, 0.72);
+  color: var(--muted);
+  padding: 9px;
+}
+
+.rules-mini-grid strong {
+  display: block;
+  color: var(--ink);
+  margin-bottom: 3px;
+}
+
 .room-list-block {
   display: grid;
   align-content: start;
@@ -402,6 +508,25 @@ h2 {
   grid-template-columns: minmax(250px, 315px) minmax(520px, 1fr) minmax(300px, 370px);
   gap: 12px;
   align-items: start;
+}
+
+.game-layout.room-screen {
+  grid-template-columns: minmax(280px, 520px);
+}
+
+.game-layout.room-screen .board-wrap,
+.game-layout.room-screen .details {
+  display: none;
+}
+
+.game-layout.result-screen {
+  grid-template-columns: minmax(320px, 780px);
+  justify-content: center;
+}
+
+.game-layout.result-screen .sidebar,
+.game-layout.result-screen .board-wrap {
+  display: none;
 }
 
 .sidebar,
@@ -756,6 +881,146 @@ h2 {
   color: var(--green);
 }
 
+.decision-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+}
+
+.onboarding-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 35;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+}
+
+.onboarding-modal.hidden {
+  display: none;
+}
+
+.onboarding-dialog {
+  width: min(680px, 100%);
+}
+
+.onboarding-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.onboarding-grid span {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(4, 9, 18, 0.54);
+  color: var(--muted);
+  line-height: 1.4;
+  padding: 11px;
+}
+
+.onboarding-grid strong {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--purple);
+  color: white;
+  margin-bottom: 8px;
+}
+
+.decision-modal.hidden {
+  display: none;
+}
+
+.decision-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(2, 6, 13, 0.72);
+  backdrop-filter: blur(8px);
+}
+
+.decision-dialog {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  gap: 14px;
+  width: min(560px, 100%);
+  max-height: min(720px, calc(100vh - 36px));
+  overflow: auto;
+  border: 1px solid rgba(183, 124, 255, 0.38);
+  border-radius: 8px;
+  background: linear-gradient(180deg, rgba(17, 28, 47, 0.98), rgba(7, 12, 22, 0.98));
+  box-shadow: 0 28px 90px rgba(0, 0, 0, 0.62);
+  padding: 16px;
+}
+
+.decision-head {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.decision-body {
+  display: grid;
+  gap: 12px;
+}
+
+.decision-body p {
+  color: var(--muted);
+  line-height: 1.42;
+}
+
+.decision-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.decision-grid span {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: rgba(4, 9, 18, 0.54);
+  color: var(--muted);
+  padding: 9px;
+}
+
+.decision-grid strong {
+  display: block;
+  color: var(--ink);
+  margin-top: 3px;
+}
+
+.decision-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding-left: 18px;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+.decision-modal.collapsed {
+  inset: auto 16px 16px auto;
+  display: block;
+  padding: 0;
+}
+
+.decision-modal.collapsed .decision-backdrop,
+.decision-modal.collapsed .decision-body {
+  display: none;
+}
+
+.decision-modal.collapsed .decision-dialog {
+  width: min(340px, calc(100vw - 32px));
+  padding: 12px;
+}
+
 .deal-actions {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -801,6 +1066,13 @@ h2 {
   color: var(--gold);
 }
 
+.result-panel h3 {
+  margin: 4px 0 0;
+  color: var(--ink);
+  font-size: 13px;
+  text-transform: uppercase;
+}
+
 .result-panel p {
   color: var(--muted);
   line-height: 1.35;
@@ -835,6 +1107,10 @@ h2 {
 
 .result-list .winner-row {
   border-color: rgba(240, 181, 76, 0.52);
+}
+
+.result-actions {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
 .report-grid {
@@ -961,6 +1237,18 @@ h2 {
     grid-template-columns: 1fr;
   }
 
+  .game-layout .sidebar {
+    order: 1;
+  }
+
+  .game-layout .board-wrap {
+    order: 2;
+  }
+
+  .game-layout .details {
+    order: 3;
+  }
+
   .board {
     grid-template-columns: repeat(3, minmax(104px, 1fr));
   }
@@ -984,8 +1272,18 @@ h2 {
     grid-template-columns: 1fr;
   }
 
+  .status-strip {
+    grid-template-columns: 1fr;
+    align-items: start;
+  }
+
+  .status-meta {
+    justify-content: start;
+  }
+
   .rooms-browser,
-  .room-list-item {
+  .room-list-item,
+  .rules-layout {
     grid-template-columns: 1fr;
   }
 
@@ -1011,5 +1309,27 @@ h2 {
 
   .cell {
     min-height: 96px;
+  }
+
+  .decision-modal {
+    align-items: end;
+    padding: 10px;
+  }
+
+  .decision-dialog {
+    max-height: calc(100vh - 20px);
+  }
+
+  .decision-head,
+  .deal-actions,
+  .result-actions,
+  .decision-grid,
+  .rules-mini-grid,
+  .onboarding-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .decision-head {
+    display: grid;
   }
 }

@@ -14,16 +14,25 @@
           <span>ДЕНЯК</span>
         </div>
         <nav class="main-nav" aria-label="Основная навигация">
-          <a href="#" id="homeNav" class="active">Главная</a>
-          <a href="#" id="roomsNav">Комнаты</a>
-          <a href="#" id="profileNav">Профиль</a>
-          <a href="#">Магазин</a>
-          <a href="#">Настройки</a>
+          <a href="#/lobby" id="homeNav" class="active">Лобби</a>
+          <a href="#/rooms" id="roomsNav">Комнаты</a>
+          <a href="#/profile" id="profileNav">Профиль</a>
+          <a href="#/history" id="historyNav">История</a>
+          <a href="#/rules" id="rulesNav">Правила</a>
         </nav>
         <div class="top-actions">
           <div class="room-badge" id="roomBadge">Лобби</div>
           <button id="logoutButton" type="button" class="mini-button secondary hidden">Выйти</button>
         </div>
+      </section>
+
+      <section class="status-strip panel hidden" id="gameStatusBar">
+        <div>
+          <p class="eyebrow" id="statusKicker">Статус</p>
+          <h2 id="statusTitle">Лобби</h2>
+        </div>
+        <p id="statusText">Выберите действие.</p>
+        <div class="status-meta" id="statusMeta"></div>
       </section>
 
       <section class="panel setup-panel" id="authPanel">
@@ -154,6 +163,53 @@
         </div>
       </section>
 
+      <section class="panel setup-panel hidden" id="historyPanel">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">История</p>
+            <h1>Партии</h1>
+          </div>
+          <p class="status-pill" id="historyCount">0 партий</p>
+        </div>
+        <ul class="profile-list history-page-list" id="historyList"></ul>
+      </section>
+
+      <section class="panel setup-panel hidden" id="rulesPanel">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Правила</p>
+            <h1>Как играть</h1>
+          </div>
+          <p class="status-pill" id="rulesCount">Справка</p>
+        </div>
+        <div class="rules-layout">
+          <article class="rules-section">
+            <h2>Цель партии</h2>
+            <div class="rules-copy" id="rulesGoal"></div>
+          </article>
+          <article class="rules-section">
+            <h2>Ход игрока</h2>
+            <div class="rules-copy" id="rulesTurn"></div>
+          </article>
+          <article class="rules-section">
+            <h2>Профессии</h2>
+            <div class="rules-copy" id="rulesProfessions"></div>
+          </article>
+          <article class="rules-section">
+            <h2>Режимы победы</h2>
+            <div class="rules-copy" id="rulesVictory"></div>
+          </article>
+          <article class="rules-section">
+            <h2>Рынок и долги</h2>
+            <div class="rules-copy" id="rulesDebt"></div>
+          </article>
+          <article class="rules-section">
+            <h2>Клетки поля</h2>
+            <div class="rules-copy" id="rulesCells"></div>
+          </article>
+        </div>
+      </section>
+
       <section class="panel setup-panel hidden" id="setupPanel">
         <div class="section-head">
           <div>
@@ -239,7 +295,7 @@
             <h2>Правила MVP</h2>
             <p>Собирайте капитал, репутацию и проекты, чтобы закрыть большую цель.</p>
             <p>Вдохновлено идеями финансового образования Роберта Кийосаки и игрой Cashflow, но правила и структура здесь самостоятельные.</p>
-            <button type="button" disabled>Скоро</button>
+            <button id="openRulesButton" type="button" class="secondary">Открыть правила</button>
           </article>
         </div>
       </section>
@@ -362,6 +418,44 @@
             </form>
           </div>
         </aside>
+      </section>
+
+      <section class="decision-modal hidden" id="decisionModal" aria-live="polite">
+        <div class="decision-backdrop" id="decisionBackdrop"></div>
+        <article class="decision-dialog" role="dialog" aria-modal="true" aria-labelledby="decisionTitle">
+          <div class="decision-head">
+            <div>
+              <p class="eyebrow" id="decisionKicker">Решение</p>
+              <h2 id="decisionTitle">Выберите действие</h2>
+            </div>
+            <button id="decisionCloseButton" type="button" class="mini-button secondary">Свернуть</button>
+          </div>
+          <div class="decision-body" id="decisionBody"></div>
+        </article>
+      </section>
+
+      <section class="onboarding-modal hidden" id="onboardingModal" aria-live="polite">
+        <div class="decision-backdrop"></div>
+        <article class="decision-dialog onboarding-dialog">
+          <div class="decision-head">
+            <div>
+              <p class="eyebrow">Быстрый старт</p>
+              <h2>Мешок Деняк за минуту</h2>
+            </div>
+            <button id="skipOnboardingButton" type="button" class="mini-button secondary">Закрыть</button>
+          </div>
+          <div class="onboarding-grid">
+            <span><strong>1</strong> Создайте комнату или войдите по коду.</span>
+            <span><strong>2</strong> Выберите профессию: доход, расходы, кэш и долги задают старт.</span>
+            <span><strong>3</strong> На своём ходу бросайте кубик и принимайте решения в модальном окне.</span>
+            <span><strong>4</strong> Повышайте репутацию, стройте инвестдоход и выходите в Лигу проектов.</span>
+            <span><strong>5</strong> Побеждайте через цель, портфель проектов или капитал по настройкам комнаты.</span>
+          </div>
+          <div class="deal-actions">
+            <button id="finishOnboardingButton" type="button">Понятно</button>
+            <button id="onboardingRulesButton" type="button" class="secondary">Правила</button>
+          </div>
+        </article>
       </section>
     </main>
 

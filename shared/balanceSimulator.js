@@ -12,6 +12,7 @@ const {
   passProjectDeal,
   acceptMarketOffer,
   declineMarketOffer,
+  confirmFinancialStress,
   repayLiability,
   serializeGame,
   serializeRules,
@@ -103,6 +104,11 @@ function playBotDecision(game) {
   }
 
   settleDebtIfUseful(game, player);
+
+  if (player.pendingFinancialStress) {
+    confirmFinancialStress(game, player.id);
+    return;
+  }
 
   if (player.pendingOpportunityChoice) {
     const type = player.cash >= 1800 || player.reputation >= 3 ? "large" : "small";

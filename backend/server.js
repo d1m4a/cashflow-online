@@ -27,6 +27,7 @@ const {
   passProjectDeal,
   acceptMarketOffer,
   declineMarketOffer,
+  confirmFinancialStress,
   addChatMessage,
   serializeGame,
   serializeRules,
@@ -408,6 +409,15 @@ async function handleApi(req, res, url) {
 
     if (action === "decline-market") {
       declineMarketOffer(game, body.playerId);
+      await persistGame(game);
+      const payload = { game: serializeGame(game) };
+      sendJson(res, 200, payload);
+      broadcastRoom(game, "room:update");
+      return;
+    }
+
+    if (action === "confirm-financial-stress") {
+      confirmFinancialStress(game, body.playerId);
       await persistGame(game);
       const payload = { game: serializeGame(game) };
       sendJson(res, 200, payload);

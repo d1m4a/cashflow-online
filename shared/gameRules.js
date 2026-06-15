@@ -1253,7 +1253,7 @@ function currentPlayer(game) {
 }
 
 function hasPendingDecision(player) {
-  return Boolean(player.pendingOpportunity || player.pendingOpportunityChoice || player.pendingMarketOffer || player.pendingProjectDeal);
+  return Boolean(player.pendingOpportunity || player.pendingOpportunityChoice || player.pendingMarketOffer || player.pendingProjectDeal || player.pendingFinancialStress);
 }
 
 function advanceTurn(game) {
@@ -1311,7 +1311,38 @@ function applyFinancialStress(game, player) {
     return message;
   }
 
-  if (player.assets.length > 0) {
+  delete player.pendingOpportunity;
+  delete player.pendingOpportunityChoice;
+  delete player.pendingMarketOffer;
+  delete player.pendingProjectDeal;
+  player.pendingFinancialStress = {
+    cash: player.cash,
+    stressLimit,
+    crisisLimit,
+    canLiquidate: player.assets.length > 0,
+    canRestructure: player.cash < crisisLimit && player.liabilities.some((liability) => !liability.restructured),
+    bankruptcy: player.cash < crisisLimit,
+    assetTitle: player.assets.length
+      ? [...player.assets].sort((a, b) => (a.marketValue || a.cost || 0) - (b.marketValue || b.cost || 0))[0].title
+      : null,
+    liabilityTitle: player.liabilities.find((liability) => !liability.restructured)?.title || null
+  };
+  message += " Требуется финансовое решение.";
+  recordDebug(game, "debt.pending", { playerId: player.id, cash: player.cash });
+  return message;
+}
+
+function confirmFinancialStress(game, playerId) {
+  ensureRoomShape(game);
+  const player = game.players.find((item) => item.id === playerId);
+  if (!player || !player.pendingFinancialStress) {
+    throw new Error("Нет финансового решения.");
+  }
+
+  const crisisLimit = player.pendingFinancialStress.crisisLimit;
+  let message = "";
+
+  if (player.assets.length > 0 && player.cash < player.pendingFinancialStress.stressLimit) {
     const asset = [...player.assets].sort((a, b) => (a.marketValue || a.cost || 0) - (b.marketValue || b.cost || 0))[0];
     const sale = liquidateAsset(player, asset.id, 0.72);
     message += ` Автоликвидация "${asset.title}": ${money(sale.net)}.`;
@@ -1339,7 +1370,13 @@ function applyFinancialStress(game, player) {
     recordDebug(game, "debt.bankruptcy", { playerId: player.id, bankruptcyCount: player.bankruptcyCount });
   }
 
-  return message;
+  delete player.pendingFinancialStress;
+  game.log.unshift(`${player.name} завершает финансовую реструктуризацию.${message}`);
+  if (currentPlayer(game)?.id === player.id) {
+    advanceTurn(game);
+  }
+  touch(game);
+  return game;
 }
 
 function liquidateAsset(player, assetId, multiplier = 0.72) {
@@ -1436,7 +1473,7 @@ function validateGameState(game) {
     if (!Number.isFinite(player.cash) || !Number.isFinite(player.expenses) || !Number.isFinite(player.passiveIncome)) {
       throw new Error("Некорректные финансовые значения игрока.");
     }
-    const pendingCount = [player.pendingOpportunity, player.pendingOpportunityChoice, player.pendingMarketOffer, player.pendingProjectDeal]
+    const pendingCount = [player.pendingOpportunity, player.pendingOpportunityChoice, player.pendingMarketOffer, player.pendingProjectDeal, player.pendingFinancialStress]
       .filter(Boolean).length;
     if (pendingCount > 1) {
       throw new Error("У игрока несколько незавершённых решений.");
@@ -1630,6 +1667,7 @@ module.exports = {
   passProjectDeal,
   acceptMarketOffer,
   declineMarketOffer,
+  confirmFinancialStress,
   addChatMessage,
   serializeGame,
   serializeRules,

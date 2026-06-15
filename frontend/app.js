@@ -35,6 +35,20 @@ const profileName = document.querySelector("#profileName");
 const profileStats = document.querySelector("#profileStats");
 const profileRooms = document.querySelector("#profileRooms");
 const profileHistory = document.querySelector("#profileHistory");
+const historyPanel = document.querySelector("#historyPanel");
+const historyNav = document.querySelector("#historyNav");
+const historyCount = document.querySelector("#historyCount");
+const historyList = document.querySelector("#historyList");
+const rulesPanel = document.querySelector("#rulesPanel");
+const rulesNav = document.querySelector("#rulesNav");
+const rulesCount = document.querySelector("#rulesCount");
+const rulesGoal = document.querySelector("#rulesGoal");
+const rulesTurn = document.querySelector("#rulesTurn");
+const rulesProfessions = document.querySelector("#rulesProfessions");
+const rulesVictory = document.querySelector("#rulesVictory");
+const rulesDebt = document.querySelector("#rulesDebt");
+const rulesCells = document.querySelector("#rulesCells");
+const openRulesButton = document.querySelector("#openRulesButton");
 const roomsPanel = document.querySelector("#roomsPanel");
 const publicRoomsList = document.querySelector("#publicRoomsList");
 const myRoomsList = document.querySelector("#myRoomsList");
@@ -48,6 +62,11 @@ const joinForm = document.querySelector("#joinForm");
 const setupPanel = document.querySelector("#setupPanel");
 const gamePanel = document.querySelector("#gamePanel");
 const roomBadge = document.querySelector("#roomBadge");
+const gameStatusBar = document.querySelector("#gameStatusBar");
+const statusKicker = document.querySelector("#statusKicker");
+const statusTitle = document.querySelector("#statusTitle");
+const statusText = document.querySelector("#statusText");
+const statusMeta = document.querySelector("#statusMeta");
 const roomTitle = document.querySelector("#roomTitle");
 const roomCode = document.querySelector("#roomCode");
 const inviteLink = document.querySelector("#inviteLink");
@@ -73,12 +92,26 @@ const debugLog = document.querySelector("#debugLog");
 const resultPanel = document.querySelector("#resultPanel");
 const dealPanel = document.querySelector("#dealPanel");
 const marketPanel = document.querySelector("#marketPanel");
+const decisionModal = document.querySelector("#decisionModal");
+const decisionBackdrop = document.querySelector("#decisionBackdrop");
+const decisionKicker = document.querySelector("#decisionKicker");
+const decisionTitle = document.querySelector("#decisionTitle");
+const decisionBody = document.querySelector("#decisionBody");
+const decisionCloseButton = document.querySelector("#decisionCloseButton");
+const onboardingModal = document.querySelector("#onboardingModal");
+const skipOnboardingButton = document.querySelector("#skipOnboardingButton");
+const finishOnboardingButton = document.querySelector("#finishOnboardingButton");
+const onboardingRulesButton = document.querySelector("#onboardingRulesButton");
 const reportPanel = document.querySelector("#reportPanel");
 const chatLog = document.querySelector("#chatLog");
 const chatForm = document.querySelector("#chatForm");
 const chatInput = document.querySelector("#chatInput");
 
 init();
+
+window.addEventListener("hashchange", () => {
+  runAction(renderRoute);
+});
 
 loginForm.addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -91,7 +124,8 @@ loginForm.addEventListener("submit", async (event) => {
       }
     });
     await setUser(data.user);
-    showLobby();
+    navigateTo("/lobby");
+    maybeShowOnboarding();
   });
 });
 
@@ -108,7 +142,8 @@ registerForm.addEventListener("submit", async (event) => {
     });
     await setUser(data.user);
     showDevAuthHint(data.emailVerification, "Ссылка подтверждения email");
-    showLobby();
+    navigateTo("/lobby");
+    maybeShowOnboarding();
   });
 });
 
@@ -196,7 +231,7 @@ logoutAllButton.addEventListener("click", async () => {
     await api("/api/auth/logout-all", { method: "POST" });
     clearSession();
     state.user = null;
-    showAuth();
+    navigateTo("/auth");
   });
 });
 
@@ -208,23 +243,44 @@ logoutButton.addEventListener("click", async () => {
     state.game = null;
     state.roomCode = null;
     state.playerId = null;
-    showAuth();
+    navigateTo("/auth");
   });
 });
 
 homeNav.addEventListener("click", (event) => {
   event.preventDefault();
-  showLobby();
+  navigateTo("/lobby");
 });
 
 roomsNav.addEventListener("click", (event) => {
   event.preventDefault();
-  runAction(showRooms);
+  navigateTo("/rooms");
 });
 
 profileNav.addEventListener("click", (event) => {
   event.preventDefault();
-  showProfile();
+  navigateTo("/profile");
+});
+
+historyNav.addEventListener("click", (event) => {
+  event.preventDefault();
+  navigateTo("/history");
+});
+
+rulesNav.addEventListener("click", (event) => {
+  event.preventDefault();
+  navigateTo("/rules");
+});
+
+openRulesButton.addEventListener("click", () => {
+  navigateTo("/rules");
+});
+
+skipOnboardingButton.addEventListener("click", completeOnboarding);
+finishOnboardingButton.addEventListener("click", completeOnboarding);
+onboardingRulesButton.addEventListener("click", () => {
+  completeOnboarding();
+  navigateTo("/rules");
 });
 
 createForm.addEventListener("submit", async (event) => {
@@ -323,7 +379,7 @@ leaveRoomButton.addEventListener("click", async () => {
     state.playerId = null;
     state.spectatorId = null;
     await refreshMe();
-    await showRooms();
+    navigateTo("/rooms");
     if (data.game?.archivedAt) {
       roomBadge.textContent = "Комната архивирована.";
     }
@@ -342,7 +398,7 @@ archiveRoomButton.addEventListener("click", async () => {
     state.playerId = null;
     state.spectatorId = null;
     await refreshMe();
-    await showRooms();
+    navigateTo("/rooms");
     roomBadge.textContent = "Комната архивирована.";
   });
 });
@@ -381,6 +437,14 @@ chatForm.addEventListener("submit", async (event) => {
   });
 });
 
+decisionCloseButton.addEventListener("click", () => {
+  decisionModal.classList.add("collapsed");
+});
+
+decisionBackdrop.addEventListener("click", () => {
+  decisionModal.classList.add("collapsed");
+});
+
 async function init() {
   try {
     hideAllPanels();
@@ -397,14 +461,16 @@ async function init() {
     if (!state.user) {
       clearRoomSession();
       state.game = null;
-      showAuth();
+      navigateTo("/auth", { replace: true });
       return;
     }
+    maybeShowOnboarding();
 
     if (state.roomCode && (state.playerId || state.spectatorId)) {
       try {
         await refreshGame();
         connectRealtime();
+        await renderRoute();
         return;
       } catch (error) {
         clearRoomSession();
@@ -412,12 +478,12 @@ async function init() {
         roomBadge.textContent = error.message || "Комната недоступна.";
       }
     }
-    showLobby();
+    await renderRoute();
   } catch (error) {
     clearSession();
     state.user = null;
     state.game = null;
-    showAuth();
+    navigateTo("/auth", { replace: true });
     showError(error.message || "Не удалось загрузить игру.");
   }
 }
@@ -447,6 +513,7 @@ async function enterRoom(code, playerId, game) {
   await refreshMe();
   await setGame(game);
   connectRealtime();
+  navigateTo(roomRouteForGame(game));
 }
 
 async function enterSpectatorRoom(code, spectatorId, game) {
@@ -458,6 +525,7 @@ async function enterSpectatorRoom(code, spectatorId, game) {
   localStorage.setItem("meshok.spectatorId", spectatorId);
   await setGame(game);
   connectRealtime();
+  navigateTo(roomRouteForGame(game));
 }
 
 async function setUser(user) {
@@ -492,10 +560,14 @@ async function setGame(game, presence = state.presence) {
     setupPanel.classList.remove("hidden");
     gamePanel.classList.add("hidden");
     roomBadge.textContent = "Вы удалены из комнаты";
+    navigateTo("/lobby");
     return;
   }
-  setupPanel.classList.add("hidden");
-  gamePanel.classList.remove("hidden");
+  const route = currentRoute();
+  if ((route.name === "room" || route.name === "game" || route.name === "result") && route.code === game.roomCode) {
+    setupPanel.classList.add("hidden");
+    gamePanel.classList.remove("hidden");
+  }
   roomBadge.textContent = `${game.privacy === "public" ? "Публичная" : "Приватная"} · ${game.status}`;
   roomTitle.textContent = game.title || `Комната ${game.roomCode}`;
   roomCode.textContent = game.roomCode;
@@ -515,6 +587,7 @@ async function setGame(game, presence = state.presence) {
   renderReport();
   renderChat();
   updateControls();
+  applyGameRouteMode();
 }
 
 function showAuth() {
@@ -522,6 +595,7 @@ function showAuth() {
   hideAllPanels();
   authPanel.classList.remove("hidden");
   roomBadge.textContent = "Войдите";
+  updateStatusBar(null);
   setActiveNav(null);
 }
 
@@ -532,12 +606,9 @@ function showLobby() {
   }
   hideAllPanels();
   authPanel.classList.add("hidden");
-  if (state.game) {
-    gamePanel.classList.remove("hidden");
-  } else {
-    setupPanel.classList.remove("hidden");
-    roomBadge.textContent = `Профиль: ${state.user.name}`;
-  }
+  setupPanel.classList.remove("hidden");
+  roomBadge.textContent = `Профиль: ${state.user.name}`;
+  updateStatusBar(null);
   setActiveNav(homeNav);
 }
 
@@ -551,6 +622,7 @@ function showProfile() {
   profilePanel.classList.remove("hidden");
   roomBadge.textContent = `Профиль: ${state.user.name}`;
   renderProfile();
+  updateStatusBar(null);
   setActiveNav(profileNav);
 }
 
@@ -563,20 +635,216 @@ async function showRooms() {
   authPanel.classList.add("hidden");
   roomsPanel.classList.remove("hidden");
   roomBadge.textContent = "Комнаты";
+  updateStatusBar(null);
   setActiveNav(roomsNav);
   await loadRoomsBrowser();
+}
+
+function showHistory() {
+  if (!state.user) {
+    showAuth();
+    return;
+  }
+  hideAllPanels();
+  authPanel.classList.add("hidden");
+  historyPanel.classList.remove("hidden");
+  roomBadge.textContent = `История: ${state.user.name}`;
+  renderHistoryPage();
+  updateStatusBar(null);
+  setActiveNav(historyNav);
+}
+
+function showRules() {
+  if (!state.user) {
+    showAuth();
+    return;
+  }
+  hideAllPanels();
+  authPanel.classList.add("hidden");
+  rulesPanel.classList.remove("hidden");
+  roomBadge.textContent = "Правила";
+  renderRulesPage();
+  updateStatusBar(null);
+  setActiveNav(rulesNav);
+}
+
+function showRoomScreen() {
+  if (!state.user) {
+    showAuth();
+    return;
+  }
+  if (!state.game) {
+    showLobby();
+    return;
+  }
+  hideAllPanels();
+  gamePanel.classList.remove("hidden");
+  gamePanel.classList.remove("result-screen");
+  gamePanel.classList.add("room-screen");
+  roomBadge.textContent = `Комната ${state.game.roomCode}`;
+  updateControls();
+  setActiveNav(roomsNav);
+}
+
+function showGameScreen() {
+  if (!state.user) {
+    showAuth();
+    return;
+  }
+  if (!state.game) {
+    showLobby();
+    return;
+  }
+  hideAllPanels();
+  gamePanel.classList.remove("hidden");
+  gamePanel.classList.remove("room-screen", "result-screen");
+  roomBadge.textContent = `Игра ${state.game.roomCode}`;
+  updateControls();
+  setActiveNav(null);
+}
+
+function showResultScreen() {
+  if (!state.user) {
+    showAuth();
+    return;
+  }
+  if (!state.game) {
+    showLobby();
+    return;
+  }
+  hideAllPanels();
+  gamePanel.classList.remove("hidden", "room-screen");
+  gamePanel.classList.add("result-screen");
+  roomBadge.textContent = `Итог ${state.game.roomCode}`;
+  updateControls();
+  setActiveNav(historyNav);
 }
 
 function hideAllPanels() {
   authPanel.classList.add("hidden");
   setupPanel.classList.add("hidden");
   profilePanel.classList.add("hidden");
+  historyPanel.classList.add("hidden");
+  rulesPanel.classList.add("hidden");
   roomsPanel.classList.add("hidden");
   gamePanel.classList.add("hidden");
 }
 
 function setActiveNav(active) {
-  [homeNav, roomsNav, profileNav].forEach((item) => item.classList.toggle("active", item === active));
+  [homeNav, roomsNav, profileNav, historyNav, rulesNav].forEach((item) => item.classList.toggle("active", item === active));
+}
+
+async function renderRoute() {
+  const route = currentRoute();
+  if (!state.user) {
+    showAuth();
+    return;
+  }
+  if (route.name === "auth") {
+    showLobby();
+    return;
+  }
+  if (route.name === "rooms") {
+    await showRooms();
+    return;
+  }
+  if (route.name === "profile") {
+    showProfile();
+    return;
+  }
+  if (route.name === "history") {
+    showHistory();
+    return;
+  }
+  if (route.name === "rules") {
+    showRules();
+    return;
+  }
+  if ((route.name === "room" || route.name === "game" || route.name === "result") && route.code) {
+    await ensureRouteRoom(route.code);
+    if (!state.game) {
+      showLobby();
+      return;
+    }
+    if (route.name === "room") {
+      showRoomScreen();
+    } else if (route.name === "game") {
+      showGameScreen();
+    } else {
+      showResultScreen();
+    }
+    return;
+  }
+  showLobby();
+}
+
+function currentRoute() {
+  const raw = (window.location.hash || "#/lobby").replace(/^#/, "");
+  const parts = raw.split("/").filter(Boolean);
+  const name = parts[0] || "lobby";
+  return { name, code: parts[1]?.toUpperCase() || null };
+}
+
+function navigateTo(path, options = {}) {
+  const nextHash = `#${path}`;
+  if (window.location.hash === nextHash) {
+    runAction(renderRoute);
+    return;
+  }
+  if (options.replace) {
+    window.history.replaceState(null, "", nextHash);
+    runAction(renderRoute);
+  } else {
+    window.location.hash = nextHash;
+  }
+}
+
+async function ensureRouteRoom(code) {
+  if (state.game?.roomCode === code) {
+    return;
+  }
+  if (state.roomCode !== code) {
+    state.roomCode = code;
+    localStorage.setItem("meshok.roomCode", code);
+  }
+  try {
+    await refreshGame();
+    connectRealtime();
+  } catch (error) {
+    showError(error.message || "Комната недоступна.");
+    clearRoomSession();
+  }
+}
+
+function roomRouteForGame(game) {
+  if (game.status === "finished") {
+    return `/result/${game.roomCode}`;
+  }
+  return game.status === "lobby" ? `/room/${game.roomCode}` : `/game/${game.roomCode}`;
+}
+
+function applyGameRouteMode() {
+  if (!state.game) {
+    return;
+  }
+  const route = currentRoute();
+  const expected = roomRouteForGame(state.game);
+  if ((route.name === "room" || route.name === "game" || route.name === "result") && route.code === state.game.roomCode) {
+    gamePanel.classList.toggle("room-screen", route.name === "room");
+    gamePanel.classList.toggle("result-screen", route.name === "result");
+    if (state.game.status === "playing" && route.name === "room") {
+      navigateTo(expected, { replace: true });
+    }
+    if (state.game.status === "lobby" && (route.name === "game" || route.name === "result")) {
+      navigateTo(expected, { replace: true });
+    }
+    if (state.game.status === "playing" && route.name === "result") {
+      navigateTo(expected, { replace: true });
+    }
+    if (state.game.status === "finished" && route.name === "game") {
+      navigateTo(expected, { replace: true });
+    }
+  }
 }
 
 function renderProfile() {
@@ -623,10 +891,117 @@ function renderProfile() {
         localStorage.removeItem("meshok.spectatorId");
         await refreshGame();
         connectRealtime();
-        showLobby();
+        navigateTo(roomRouteForGame(state.game));
       });
     });
   });
+}
+
+function renderHistoryPage() {
+  const history = state.user?.history || [];
+  historyCount.textContent = `${history.length} партий`;
+  historyList.innerHTML = history.length
+    ? history.map((item) => `
+      <li>
+        <span><strong>${item.won ? "Победа" : "Партия"}</strong> ${escapeHtml(item.roomCode)} · ${formatDate(item.finishedAt)}</span>
+        <small>${money(item.netWorth)} капитал · ${money(item.passiveIncome)} инвестдоход · ${money(item.projectIncome || 0)} проекты · победитель ${escapeHtml(item.winnerName)}</small>
+      </li>
+    `).join("")
+    : "<li>История появится после завершения партии</li>";
+}
+
+function renderRulesPage() {
+  rulesCount.textContent = `${professions.length} профессий`;
+  const gameLengths = ruleSummary.gameLengths || [];
+  const victoryModes = ruleSummary.victoryModes || [];
+  rulesGoal.innerHTML = `
+    <p>Партия начинается на Денежном дворе. Игроки получают зарплату, покупают активы, закрывают долги и повышают репутацию.</p>
+    <p>Когда репутация достигает ${ruleSummary.reputationGoal ?? 5}, а кэш покрывает ${ruleSummary.reserveMonthsGoal ?? 2} месяца расходов, игрок переходит в Лигу проектов.</p>
+    <p>В Лиге проектов можно закрыть большую цель или собрать портфель: ${money(ruleSummary.projectIncomeGoal ?? 0)} дохода проектов и ${ruleSummary.projectPortfolioGoal ?? 0} проекта.</p>
+  `;
+  rulesTurn.innerHTML = `
+    <ul class="rules-list">
+      <li>На своём ходу игрок бросает кубик и попадает на клетку поля.</li>
+      <li>Если появляется решение, модальное окно блокирует следующий ход до выбора.</li>
+      <li>Сделки можно купить за наличные, с кредитом или пропустить.</li>
+      <li>Ход переходит дальше после завершения всех pending decisions.</li>
+    </ul>
+  `;
+  rulesProfessions.innerHTML = `
+    <div class="rules-mini-grid">
+      ${professions.map((profession) => `
+        <span>
+          <strong>${escapeHtml(profession.title)}</strong>
+          Доход ${money(profession.salary)} · расход ${money(profession.expenses)} · кэш ${money(profession.cash)}
+        </span>
+      `).join("")}
+    </div>
+  `;
+  rulesVictory.innerHTML = `
+    <div class="rules-mini-grid">
+      ${victoryModes.map((mode) => `<span><strong>${escapeHtml(mode.title)}</strong>${victoryModeDescription(mode.id)}</span>`).join("")}
+      ${gameLengths.map((item) => `<span><strong>${escapeHtml(item.title)}</strong>${item.maxTurns ? `${item.maxTurns} ходов до оценки капитала` : "без лимита ходов"}</span>`).join("")}
+    </div>
+  `;
+  rulesDebt.innerHTML = `
+    <ul class="rules-list">
+      <li>Кредиты повышают расходы, но позволяют купить актив раньше.</li>
+      <li>Рынок может дать кэш, просадку или предложение продать актив.</li>
+      <li>При глубоком минусе открывается модальное финансовое решение: автоликвидация актива, реструктуризация долга, банкротство.</li>
+      <li>Банкротство снижает репутацию, обнуляет кэш и заставляет пропустить ход.</li>
+    </ul>
+  `;
+  const cellCounts = countBy(cells.map(([type]) => type));
+  const projectCellCounts = countBy(projectCells.map(([type]) => type));
+  rulesCells.innerHTML = `
+    <div class="rules-mini-grid">
+      ${Object.entries(cellCounts).map(([type, count]) => `<span><strong>${cellLabel(type)}</strong>${count} на Денежном дворе</span>`).join("")}
+      ${Object.entries(projectCellCounts).map(([type, count]) => `<span><strong>${cellLabel(type)}</strong>${count} в Лиге проектов</span>`).join("")}
+    </div>
+  `;
+}
+
+function victoryModeDescription(id) {
+  return {
+    classic: "цель или портфель проектов",
+    goal: "победа только через большую цель",
+    portfolio: "победа только через портфель проектов",
+    netWorth: "победа по капиталу после лимита ходов"
+  }[id] || "особый режим";
+}
+
+function cellLabel(type) {
+  return {
+    payday: "Зарплата",
+    opportunity: "Возможность",
+    expense: "Расход",
+    market: "Рынок",
+    charity: "Благотворительность",
+    downsized: "Сокращение",
+    "money-day": "Деньги",
+    "fast-deal": "Бизнес",
+    goal: "Цель",
+    "tax-audit": "Налоги"
+  }[type] || type;
+}
+
+function countBy(items) {
+  return items.reduce((acc, item) => {
+    acc[item] = (acc[item] || 0) + 1;
+    return acc;
+  }, {});
+}
+
+function maybeShowOnboarding() {
+  if (!state.user || localStorage.getItem("meshok.onboarding.v1") === "done") {
+    return;
+  }
+  onboardingModal.classList.remove("hidden");
+}
+
+function completeOnboarding() {
+  localStorage.setItem("meshok.onboarding.v1", "done");
+  onboardingModal.classList.add("hidden");
 }
 
 async function loadRoomsBrowser() {
@@ -656,7 +1031,7 @@ function renderRoomsBrowser(roomItems) {
           localStorage.removeItem("meshok.spectatorId");
           await refreshGame();
           connectRealtime();
-          showLobby();
+          navigateTo(roomRouteForGame(state.game));
           return;
         }
         if (action === "open-spectator") {
@@ -668,7 +1043,7 @@ function renderRoomsBrowser(roomItems) {
           localStorage.setItem("meshok.spectatorId", state.spectatorId);
           await refreshGame();
           connectRealtime();
-          showLobby();
+          navigateTo(roomRouteForGame(state.game));
           return;
         }
         if (action === "join") {
@@ -889,6 +1264,7 @@ function renderResult() {
   }
 
   const winner = state.game.players.find((player) => player.id === state.game.winnerId);
+  const isHost = myPlayer()?.id === state.game.hostId;
   const rows = state.game.players
     .map((player) => {
       const netWorth = player.cash + player.assets.reduce((sum, asset) => sum + (asset.marketValue || asset.cost || 0), 0) - (player.liabilityBalance || 0);
@@ -896,10 +1272,15 @@ function renderResult() {
         <li class="${player.id === state.game.winnerId ? "winner-row" : ""}">
           <span>${escapeHtml(player.name)}</span>
           <strong>${money(netWorth)}</strong>
-          <small>${money(player.passiveIncome)} инвестдоход · ${player.projectAssetCount ?? 0} проектов · репутация ${player.reputation ?? 0}</small>
+          <small>${money(player.passiveIncome)} инвестдоход · ${money(player.projectIncome || 0)} проекты · ${player.projectAssetCount ?? 0} проектов · банкротств ${player.bankruptcyCount || 0}</small>
         </li>
       `;
     })
+    .join("");
+  const keyEvents = (state.game.log || [])
+    .filter((item) => /выигрывает|побеждает|банкротство|реструктуризация|переходит|портфель|цель/i.test(item))
+    .slice(0, 5)
+    .map((item) => `<li><span>${escapeHtml(item)}</span></li>`)
     .join("");
 
   resultPanel.classList.remove("hidden");
@@ -908,32 +1289,88 @@ function renderResult() {
     <h2>${escapeHtml(winner?.name || "Игрок")} победил</h2>
     <p>${escapeHtml(victoryReason(winner))}</p>
     <ul class="result-list">${rows}</ul>
+    <h3>Ключевые события</h3>
+    <ul class="result-list">${keyEvents || "<li><span>События партии сохранены в журнале.</span></li>"}</ul>
+    <div class="deal-actions result-actions">
+      <button id="resultRestartButton" ${!isHost ? "disabled" : ""}>Новая игра</button>
+      <button id="resultRoomButton" class="secondary">Назад в комнату</button>
+      <button id="resultProfileButton" class="secondary">Профиль</button>
+      <button id="resultHistoryButton" class="secondary">История</button>
+    </div>
   `;
+
+  document.querySelector("#resultRestartButton").addEventListener("click", () => {
+    if (!isHost) {
+      return;
+    }
+    restartButton.click();
+  });
+  document.querySelector("#resultRoomButton").addEventListener("click", () => navigateTo(`/room/${state.game.roomCode}`));
+  document.querySelector("#resultProfileButton").addEventListener("click", () => navigateTo("/profile"));
+  document.querySelector("#resultHistoryButton").addEventListener("click", () => navigateTo("/history"));
 }
 
 function renderDeal() {
   const me = myPlayer();
+  dealPanel.classList.add("hidden");
+  dealPanel.innerHTML = "";
+  if (me?.pendingFinancialStress) {
+    const stress = me.pendingFinancialStress;
+    const steps = [
+      stress.canLiquidate ? `Продажа актива: ${stress.assetTitle || "самый ликвидный актив"}.` : "",
+      stress.canRestructure ? `Реструктуризация долга: ${stress.liabilityTitle || "крупнейший долг"}.` : "",
+      stress.bankruptcy ? "Если минус останется критическим, будет банкротство: кэш 0, минус репутация, пропуск хода." : ""
+    ].filter(Boolean);
+    showDecisionModal("Финансовый стресс", stress.bankruptcy ? "Банкротство / реструктуризация" : "Реструктуризация", `
+      <p>Баланс ушёл ниже безопасного уровня. Заверши финансовое решение, чтобы передать ход дальше.</p>
+      <div class="decision-grid">
+        <span>Текущий кэш<strong>${money(stress.cash)}</strong></span>
+        <span>Кризисный порог<strong>${money(stress.crisisLimit)}</strong></span>
+      </div>
+      <ul class="decision-list">
+        ${steps.map((step) => `<li>${escapeHtml(step)}</li>`).join("")}
+      </ul>
+      <div class="deal-actions">
+        <button id="confirmStressButton">Принять план</button>
+        <button id="reviewReportButton" class="secondary">Отчёт игрока</button>
+      </div>
+    `);
+
+    document.querySelector("#confirmStressButton").addEventListener("click", async () => {
+      runAction(async () => {
+        const data = await api(`/api/rooms/${state.roomCode}/confirm-financial-stress`, {
+          method: "POST",
+          body: { playerId: state.playerId }
+        });
+        await setGame(data.game);
+      });
+    });
+
+    document.querySelector("#reviewReportButton").addEventListener("click", () => {
+      decisionModal.classList.add("collapsed");
+      reportPanel.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+    return;
+  }
+
   if (me?.pendingProjectDeal) {
     const deal = me.pendingProjectDeal;
     const upkeep = deal.upkeep || 0;
     const netIncome = Math.max(0, deal.passiveIncome - upkeep);
-    dealPanel.classList.remove("hidden");
-    dealPanel.innerHTML = `
-      <div>
-        <p class="eyebrow">Проект</p>
-        <h2>${escapeHtml(deal.title)}</h2>
-      </div>
+    showDecisionModal("Проект", deal.title, `
       <p>${escapeHtml(deal.text)}</p>
-      <p>Вход: <strong>${money(deal.cost)}</strong></p>
-      <p>Оценка: <strong>${money(deal.marketValue ?? deal.cost)}</strong></p>
-      <p>Доход проектов: <strong>+${money(deal.passiveIncome)}</strong></p>
-      <p>Обслуживание: <strong>${money(upkeep)}</strong></p>
-      <p>Чистый поток: <strong>+${money(netIncome)}</strong></p>
+      <div class="decision-grid">
+        <span>Вход<strong>${money(deal.cost)}</strong></span>
+        <span>Оценка<strong>${money(deal.marketValue ?? deal.cost)}</strong></span>
+        <span>Доход проектов<strong>+${money(deal.passiveIncome)}</strong></span>
+        <span>Обслуживание<strong>${money(upkeep)}</strong></span>
+        <span>Чистый поток<strong>+${money(netIncome)}</strong></span>
+      </div>
       <div class="deal-actions">
         <button id="buyProjectButton" ${me.cash < deal.cost ? "disabled" : ""}>Вложиться</button>
         <button id="passProjectButton" class="secondary">Пропустить</button>
       </div>
-    `;
+    `);
 
     document.querySelector("#buyProjectButton").addEventListener("click", async () => {
       runAction(async () => {
@@ -958,19 +1395,14 @@ function renderDeal() {
   }
 
   if (me?.pendingOpportunityChoice) {
-    dealPanel.classList.remove("hidden");
-    dealPanel.innerHTML = `
-      <div>
-        <p class="eyebrow">Возможность</p>
-        <h2>Выбор сделки</h2>
-      </div>
+    showDecisionModal("Возможность", "Выбор сделки", `
       <p>Выбери малую сделку с меньшим входом или крупную сделку с большим потенциалом и риском.</p>
       <div class="deal-actions">
         <button id="smallDealButton">Малая</button>
         <button id="largeDealButton">Крупная</button>
         <button id="skipDealChoiceButton" class="secondary">Пропустить</button>
       </div>
-    `;
+    `);
 
     document.querySelector("#smallDealButton").addEventListener("click", () => chooseDealType("small"));
     document.querySelector("#largeDealButton").addEventListener("click", () => chooseDealType("large"));
@@ -987,30 +1419,29 @@ function renderDeal() {
   }
 
   if (!me?.pendingOpportunity) {
-    dealPanel.classList.add("hidden");
-    dealPanel.innerHTML = "";
+    if (!me?.pendingMarketOffer) {
+      hideDecisionModal();
+    }
     return;
   }
 
   const deal = me.pendingOpportunity;
-  dealPanel.classList.remove("hidden");
-  dealPanel.innerHTML = `
-    <div>
-      <p class="eyebrow">Сделка</p>
-      <h2>${escapeHtml(deal.title)}</h2>
-    </div>
+  showDecisionModal("Сделка", deal.title, `
     <p>${escapeHtml(deal.text)}</p>
-    <p>Тип: <strong>${deal.type === "large" ? "Крупная" : "Малая"} сделка</strong></p>
-    <p>Цена: <strong>${money(deal.cost)}</strong></p>
-    <p>Взнос: <strong>${money(deal.downPayment ?? deal.cost)}</strong></p>
-    <p>Кредит: <strong>${money(deal.loan ?? 0)}</strong>, платёж <strong>${money(deal.payment ?? 0)}</strong></p>
-    <p>Инвестдоход: <strong>${money(deal.passiveIncome)}</strong></p>
+    <div class="decision-grid">
+      <span>Тип<strong>${deal.type === "large" ? "Крупная" : "Малая"}</strong></span>
+      <span>Цена<strong>${money(deal.cost)}</strong></span>
+      <span>Взнос<strong>${money(deal.downPayment ?? deal.cost)}</strong></span>
+      <span>Кредит<strong>${money(deal.loan ?? 0)}</strong></span>
+      <span>Платёж<strong>${money(deal.payment ?? 0)}</strong></span>
+      <span>Инвестдоход<strong>+${money(deal.passiveIncome)}</strong></span>
+    </div>
     <div class="deal-actions">
       <button id="buyCashButton" ${me.cash < deal.cost ? "disabled" : ""}>За наличные</button>
       <button id="buyFinanceButton" ${(deal.loan || 0) <= 0 || me.cash < (deal.downPayment ?? deal.cost) ? "disabled" : ""}>С кредитом</button>
       <button id="passButton" class="secondary">Пропустить</button>
     </div>
-  `;
+  `);
 
   document.querySelector("#buyCashButton").addEventListener("click", async () => {
     runAction(async () => {
@@ -1053,29 +1484,39 @@ function chooseDealType(type) {
   });
 }
 
+function showDecisionModal(kicker, title, bodyHtml) {
+  decisionKicker.textContent = kicker;
+  decisionTitle.textContent = title;
+  decisionBody.innerHTML = bodyHtml;
+  decisionModal.classList.remove("hidden", "collapsed");
+}
+
+function hideDecisionModal() {
+  decisionModal.classList.add("hidden");
+  decisionModal.classList.remove("collapsed");
+  decisionBody.innerHTML = "";
+}
+
 function renderMarketOffer() {
   const me = myPlayer();
+  marketPanel.classList.add("hidden");
+  marketPanel.innerHTML = "";
   if (!me?.pendingMarketOffer) {
-    marketPanel.classList.add("hidden");
-    marketPanel.innerHTML = "";
     return;
   }
 
   const offer = me.pendingMarketOffer;
-  marketPanel.classList.remove("hidden");
-  marketPanel.innerHTML = `
-    <div>
-      <p class="eyebrow">Рынок</p>
-      <h2>${escapeHtml(offer.title)}</h2>
-    </div>
+  showDecisionModal("Рынок", offer.title, `
     <p>${escapeHtml(offer.text)}</p>
-    <p>Актив: <strong>${escapeHtml(offer.assetTitle)}</strong></p>
-    <p>Цена продажи: <strong>${money(offer.price)}</strong></p>
+    <div class="decision-grid">
+      <span>Актив<strong>${escapeHtml(offer.assetTitle)}</strong></span>
+      <span>Цена продажи<strong>${money(offer.price)}</strong></span>
+    </div>
     <div class="deal-actions">
       <button id="acceptMarketButton">Продать</button>
       <button id="declineMarketButton" class="secondary">Оставить</button>
     </div>
-  `;
+  `);
 
   document.querySelector("#acceptMarketButton").addEventListener("click", async () => {
     runAction(async () => {
@@ -1205,7 +1646,7 @@ function updateControls() {
   const isHost = me?.id === game.hostId;
   const isSpectator = Boolean(mySpectator());
   const isMyTurn = game.currentPlayerId === state.playerId;
-  const hasPendingDeal = Boolean(me?.pendingOpportunity || me?.pendingOpportunityChoice || me?.pendingMarketOffer || me?.pendingProjectDeal);
+  const hasPendingDeal = Boolean(me?.pendingOpportunity || me?.pendingOpportunityChoice || me?.pendingMarketOffer || me?.pendingProjectDeal || me?.pendingFinancialStress);
   const notReadyPlayers = game.players.filter((player) => player.id !== game.hostId && !player.ready);
 
   roomSettingsPanel.classList.toggle("hidden", !isHost || Boolean(game.archivedAt));
@@ -1226,12 +1667,19 @@ function updateControls() {
 
   if (game.archivedAt) {
     message.textContent = "Комната архивирована.";
+    updateStatusBar({ kicker: "Комната", title: "Архивирована", text: "Комната больше недоступна для действий.", tone: "danger" });
     return;
   }
 
   if (isSpectator) {
     const current = game.players.find((player) => player.id === game.currentPlayerId);
     message.textContent = game.status === "playing" ? `Режим наблюдателя. Ход игрока ${current?.name || "..."}.` : "Режим наблюдателя.";
+    updateStatusBar({
+      kicker: "Наблюдение",
+      title: game.status === "playing" ? `Ходит ${current?.name || "игрок"}` : "Комната открыта",
+      text: game.status === "playing" ? "Вы смотрите партию без права хода." : waitingText(game, notReadyPlayers),
+      tone: "neutral"
+    });
     return;
   }
 
@@ -1239,15 +1687,93 @@ function updateControls() {
     message.textContent = isHost
       ? notReadyPlayers.length > 0 ? `Ждём готовность: ${notReadyPlayers.map((player) => player.name).join(", ")}.` : "Все готовы. Можно начинать игру."
       : me?.ready ? "Ты готов. Ждём старт от хоста." : "Отметь готовность, когда можно начинать.";
+    updateStatusBar({
+      kicker: "Комната",
+      title: notReadyPlayers.length > 0 ? "Ждём игроков" : "Готово к старту",
+      text: waitingText(game, notReadyPlayers),
+      tone: notReadyPlayers.length > 0 ? "waiting" : "ready"
+    });
   } else if (game.status === "finished") {
     const winner = game.players.find((player) => player.id === game.winnerId);
     message.textContent = isHost ? `${winner?.name || "Игрок"} победил. Можно начать новую игру в этой комнате.` : `${winner?.name || "Игрок"} победил. Ждём рестарт от хоста.`;
+    updateStatusBar({
+      kicker: "Итог",
+      title: `${winner?.name || "Игрок"} победил`,
+      text: isHost ? "Можно начать новую партию в этой комнате." : "Ждём решение хоста о новой партии.",
+      tone: "ready"
+    });
   } else if (isMyTurn) {
     message.textContent = hasPendingDeal ? "Заверши текущее решение, затем ход перейдёт дальше." : me?.track === "project-league" ? "Твой ход в Лиге проектов." : "Твой ход.";
+    updateStatusBar({
+      kicker: "Ход",
+      title: hasPendingDeal ? "Заверши решение" : "Твой ход",
+      text: hasPendingDeal ? pendingDecisionText(me) : "Можно бросить кубик и продолжить партию.",
+      tone: "turn"
+    });
   } else {
     const current = game.players.find((player) => player.id === game.currentPlayerId);
     message.textContent = `Ход игрока ${current?.name || "..."}.`;
+    updateStatusBar({
+      kicker: "Ход",
+      title: `Ходит ${current?.name || "игрок"}`,
+      text: disconnectedPlayersText(game) || "Следите за событиями партии.",
+      tone: disconnectedPlayersText(game) ? "danger" : "neutral"
+    });
   }
+}
+
+function updateStatusBar(status) {
+  if (!status) {
+    gameStatusBar.classList.add("hidden");
+    return;
+  }
+  gameStatusBar.classList.remove("hidden");
+  gameStatusBar.classList.remove("status-waiting", "status-ready", "status-turn", "status-danger", "status-neutral");
+  if (status.tone && status.tone !== "neutral") {
+    gameStatusBar.classList.add(`status-${status.tone}`);
+  }
+  statusKicker.textContent = status.kicker || "Статус";
+  statusTitle.textContent = status.title || "Комната";
+  statusText.textContent = status.text || "";
+  const disconnected = disconnectedPlayersText(state.game);
+  statusMeta.innerHTML = [
+    state.game ? `<span>${state.game.players.length}/${state.game.maxPlayers || 4} игроков</span>` : "",
+    state.game?.round ? `<span>Раунд ${state.game.round}</span>` : "",
+    disconnected ? `<span class="danger-text">${escapeHtml(disconnected)}</span>` : ""
+  ].filter(Boolean).join("");
+}
+
+function waitingText(game, notReadyPlayers) {
+  const disconnected = disconnectedPlayersText(game);
+  if (disconnected) {
+    return disconnected;
+  }
+  if (game.players.length < (game.maxPlayers || 4)) {
+    return `Можно пригласить ещё ${Math.max(0, (game.maxPlayers || 4) - game.players.length)} игрока.`;
+  }
+  if (notReadyPlayers.length > 0) {
+    return `Ждём готовность: ${notReadyPlayers.map((player) => player.name).join(", ")}.`;
+  }
+  return "Все игроки готовы.";
+}
+
+function disconnectedPlayersText(game) {
+  if (!game || !state.presence?.players) {
+    return "";
+  }
+  const offline = game.players
+    .filter((player) => !playerPresence(player.id).connected)
+    .map((player) => player.name);
+  return offline.length ? `Отключились: ${offline.join(", ")}.` : "";
+}
+
+function pendingDecisionText(player) {
+  if (player.pendingOpportunityChoice) return "Выберите малую или крупную сделку.";
+  if (player.pendingOpportunity) return "Решите, покупать сделку или пропустить.";
+  if (player.pendingMarketOffer) return "Примите или отклоните рыночное предложение.";
+  if (player.pendingProjectDeal) return "Решите, инвестировать в проект или пропустить.";
+  if (player.pendingFinancialStress) return "Подтвердите реструктуризацию или банкротство.";
+  return "Завершите текущее действие.";
 }
 
 async function refreshGame() {

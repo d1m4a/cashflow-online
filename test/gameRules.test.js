@@ -16,6 +16,7 @@ const {
   buyGrandGoal,
   buyProjectDeal,
   passProjectDeal,
+  confirmFinancialStress,
   serializeGame,
   serializeRules,
   validateGameState
@@ -452,6 +453,9 @@ test("financial stress can force liquidation before bankruptcy", () => {
 
   takeTurn(game, player.id);
 
+  assert.ok(player.pendingFinancialStress);
+  confirmFinancialStress(game, player.id);
+
   assert.equal(player.assets.some((asset) => asset.id === "stress-asset"), false);
   assert.ok(serializeGame(game).debugLog.some((item) => item.type === "debt.asset-liquidation"));
 });
@@ -462,6 +466,11 @@ test("deep negative cash triggers restructuring and bankruptcy guardrails", () =
   player.cash = -50_000;
 
   takeTurn(game, player.id);
+
+  assert.ok(player.pendingFinancialStress);
+  assert.ok(serializeGame(game).debugLog.some((item) => item.type === "debt.pending"));
+
+  confirmFinancialStress(game, player.id);
 
   assert.equal(player.cash, 0);
   assert.equal(player.bankruptcyCount, 1);
