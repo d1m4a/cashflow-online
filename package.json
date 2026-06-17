@@ -11,6 +11,7 @@
     "db:backup": "node tools/backupPostgres.js",
     "db:restore": "node tools/restorePostgres.js",
     "test": "node --test",
+    "test:integration": "node --test test/api.integration.test.js",
     "simulate": "node tools/simulateBalance.js"
   },
   "engines": {

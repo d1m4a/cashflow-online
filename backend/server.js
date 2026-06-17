@@ -187,17 +187,33 @@ async function shutdown(signal) {
   }, Number(process.env.SHUTDOWN_TIMEOUT_MS || 10_000));
   forceTimer.unref();
 
+  await stopServer();
+  clearTimeout(forceTimer);
+  logger.info("Shutdown complete", { signal });
+  process.exit(0);
+}
+
+async function stopServer() {
   for (const ws of wsServer.clients) {
     ws.close(1001, "Server shutting down");
   }
 
-  await new Promise((resolve) => server.close(resolve));
+  await new Promise((resolve, reject) => {
+    if (!server.listening) {
+      resolve();
+      return;
+    }
+    server.close((error) => {
+      if (error) {
+        reject(error);
+        return;
+      }
+      resolve();
+    });
+  });
   wsServer.close();
   clearInterval(heartbeatTimer);
   await db.closeDb();
-  clearTimeout(forceTimer);
-  logger.info("Shutdown complete", { signal });
-  process.exit(0);
 }
 
 async function handleApi(req, res, url) {
@@ -267,7 +283,11 @@ async function handleApi(req, res, url) {
 
   if (req.method === "GET" && !action) {
     const user = await requireUser(req, res);
-    if (!user || !canReadRoom(game, user.id)) return;
+    if (!user) return;
+    if (!canReadRoom(game, user.id)) {
+      sendJson(res, 403, { error: "Нет доступа к комнате." });
+      return;
+    }
     sendJson(res, 200, roomPayload(game));
     return;
   }
@@ -1463,5 +1483,9 @@ function sendText(res, status, text, extraHeaders = {}, req = null) {
 
 module.exports = {
   server,
-  startServer
+  startServer,
+  stopServer,
+  _test: {
+    recordFinishedGame
+  }
 };

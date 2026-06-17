@@ -106,6 +106,8 @@ npm run db:up
 npm test
 ```
 
+Postgres-backed integration tests запускаются при заданном `TEST_DATABASE_URL`. В GitHub Actions тестовая Postgres поднимается автоматически. Подробности: `docs/TESTING.md`.
+
 Быстрый прогон баланса с ботами. Он помогает видеть win rate профессий, средний капитал и причины завершения партий:
 
 ```bash
@@ -180,3 +182,4 @@ npm run db:restore -- backups/cashflow-online-YYYY-MM-DD.dump
 - `docs/MVP.md` - границы текущего MVP и план развития.
 - `docs/PRODUCTION.md` - production runbook, deploy checklist и backup policy.
 - `docs/RULES.md` - текущие реализованные правила игры в текстовом виде.
+- `docs/TESTING.md` - стратегия тестирования и запуск integration suite.
