@@ -18,7 +18,7 @@
 | Graceful shutdown | Готово | `SIGTERM`/`SIGINT` закрывают HTTP, WebSocket и Postgres pool |
 | Защита cookies | Готово | `HttpOnly`, `SameSite=Lax`, `Secure` в production |
 | CORS/security headers | Готово | Origin checks, CSP, HSTS, frame/content headers |
-| CI checks на GitHub | Готово в репозитории | `.github/workflows/ci.yml`; фактический запуск будет после push на GitHub |
+| CI checks на GitHub | Готово | `.github/workflows/ci.yml` поднимает Postgres service и запускает `npm test` |
 
 ## Что можно сделать локально
 
@@ -61,7 +61,7 @@ npm run db:restore -- backups/cashflow-online-YYYY-MM-DD.dump
 - Выпустить production HTTPS-сертификат без домена и хостинга.
 - Включить managed Postgres backups без доступа к панели провайдера.
 - Подключить Sentry/log drain без DSN/API key внешнего сервиса.
-- Убедиться, что GitHub Actions реально прошли, пока коммиты не запушены на GitHub.
+- Убедиться, что GitHub Actions прошли для конкретного commit/branch без доступа к GitHub UI или `gh`.
 - Проверить production cookies через HTTPS, пока нет production URL.
 
 ## Render deploy checklist
@@ -97,7 +97,7 @@ LOG_FORMAT=json
 
 ## Backup policy
 
-Минимальная политика для MVP:
+Минимальная production-политика:
 
 - backup не реже 1 раза в день;
 - хранить ежедневные backup за последние 7 дней;
