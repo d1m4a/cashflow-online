@@ -69,7 +69,7 @@ if (!TEST_DATABASE_URL) {
     });
 
     assert.equal(created.status, 201);
-    assert.match(created.body.roomCode, /^[A-Z0-9]{5}$/);
+    assert.match(created.body.roomCode, /^[A-Z0-9]{8}$/);
     assert.equal(created.body.game.title, "API Test Room");
     assert.equal(created.body.game.privacy, "public");
 
@@ -153,6 +153,90 @@ if (!TEST_DATABASE_URL) {
     assert.equal(stats.wins, 1);
   });
 
+  test("a spoofed X-Forwarded-For cannot buy extra login attempts", async () => {
+    const statuses = [];
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+      const response = await request("/api/auth/login", {
+        method: "POST",
+        headers: { "X-Forwarded-For": `203.0.113.${attempt}` },
+        body: { email: "nobody@example.com", password: "wrong-password" }
+      });
+      statuses.push(response.status);
+      if (response.status === 429) {
+        break;
+      }
+    }
+
+    assert.ok(
+      statuses.includes(429),
+      "rate limit must key on the real peer, not on a client supplied header"
+    );
+  });
+
+  test("password reset reports that email delivery is unavailable", async () => {
+    const response = await request("/api/auth/request-password-reset", {
+      method: "POST",
+      body: { email: "alice@example.com" }
+    });
+    // EMAIL_DEV_MODE is on in tests, so the endpoint still works but must never
+    // claim a message was sent.
+    assert.equal(response.status, 200);
+    assert.notEqual(response.body.passwordReset?.sent, true);
+  });
+
+  test("expired sessions and used tokens are swept out of the database", async () => {
+    const user = await register("sweep@example.com", "Sweep");
+    const me = await request("/api/me", { cookie: user.cookie });
+    assert.equal(me.body.user.email, "sweep@example.com");
+
+    const token = /meshok_session=([^;]+)/.exec(user.cookie)[1];
+    const pool = new Pool({ connectionString: TEST_DATABASE_URL });
+    try {
+      await pool.query("UPDATE sessions SET expires_at = $2 WHERE token = $1", [
+        decodeURIComponent(token),
+        Date.now() - 1000
+      ]);
+      const removed = await db.cleanupExpired();
+      assert.ok(removed.sessions >= 1, "the expired session must be deleted");
+
+      const after = await pool.query("SELECT 1 FROM sessions WHERE token = $1", [decodeURIComponent(token)]);
+      assert.equal(after.rowCount, 0);
+    } finally {
+      await pool.end();
+    }
+  });
+
+  test("archived rooms are evicted from memory but kept in the database", async () => {
+    const { _test } = require("../backend/server");
+    const host = await register("evict@example.com", "Evictor");
+    const created = await request("/api/rooms", {
+      method: "POST",
+      cookie: host.cookie,
+      body: { name: "Evictor", professionId: "event-host" }
+    });
+    const roomCode = created.body.roomCode;
+
+    const archived = await request(`/api/rooms/${roomCode}/archive`, {
+      method: "POST",
+      cookie: host.cookie,
+      body: { playerId: created.body.playerId }
+    });
+    assert.equal(archived.status, 200);
+    assert.equal(_test.rooms.has(roomCode), true, "still resident right after archiving");
+
+    _test.evictArchivedRooms();
+    assert.equal(_test.rooms.has(roomCode), false, "evicted from memory");
+
+    const pool = new Pool({ connectionString: TEST_DATABASE_URL });
+    try {
+      const row = await pool.query("SELECT archived_at FROM rooms WHERE room_code = $1", [roomCode]);
+      assert.equal(row.rowCount, 1, "row is retained in Postgres");
+      assert.ok(Number(row.rows[0].archived_at) > 0, "archived_at is queryable outside the JSONB blob");
+    } finally {
+      await pool.end();
+    }
+  });
+
   async function register(email, name) {
     const response = await request("/api/auth/register", {
       method: "POST",
@@ -169,6 +253,7 @@ if (!TEST_DATABASE_URL) {
     if (options.cookie) {
       headers.Cookie = sessionCookie(options.cookie);
     }
+    Object.assign(headers, options.headers || {});
 
     const response = await fetch(`${baseUrl}${path}`, {
       method: options.method || "GET",

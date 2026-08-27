@@ -19,7 +19,12 @@ const {
   confirmFinancialStress,
   serializeGame,
   serializeRules,
-  validateGameState
+  validateGameState,
+  forceAdvanceTurn,
+  isTurnExpired,
+  makeRoomCode,
+  ROOM_CODE_LENGTH,
+  MISSED_TURNS_LIMIT
 } = require("../shared/gameRules");
 
 function makeStartedGame(professionId = "event-host") {
@@ -502,4 +507,123 @@ test("deep negative cash triggers restructuring and bankruptcy guardrails", () =
   assert.ok(player.skippedTurns >= 1);
   assert.ok(player.liabilities.some((liability) => liability.restructured));
   assert.ok(serializeGame(game).debugLog.some((item) => item.type === "debt.bankruptcy"));
+});
+
+test("serialized state stays small: no snapshots, capped logs", () => {
+  const game = makeStartedGame();
+  for (let i = 0; i < 400; i += 1) {
+    game.log.unshift("строка журнала " + i);
+  }
+  takeTurn(game, game.players[0].id);
+
+  assert.equal(game.historySnapshots.length > 0, true);
+  const state = serializeGame(game);
+  assert.equal(state.historySnapshots, undefined, "snapshots are server-only");
+  assert.ok(state.log.length <= 50, "client log is capped");
+  assert.ok(state.debugLog.length <= 30, "client debug log is capped");
+  assert.ok(game.log.length <= 120, "server log is capped");
+});
+
+test("restarting a room does not carry the previous game's logs", () => {
+  const game = makeStartedGame();
+  takeTurn(game, game.players[0].id);
+  assert.ok(game.log.length > 1);
+
+  game.status = "finished";
+  game.winnerId = game.players[0].id;
+  restartGame(game, game.hostId);
+
+  assert.equal(game.debugLog.length, 1, "only the restart event remains");
+  assert.equal(game.debugLog[0].type, "game.restart");
+  assert.equal(game.historySnapshots.length, 0);
+  assert.equal(game.turnDeadline, null);
+  assert.equal(game.log.length, 1, "only the restart notice remains");
+});
+
+test("room codes are long enough not to be walked", () => {
+  const codes = new Set();
+  for (let i = 0; i < 200; i += 1) {
+    const code = makeRoomCode();
+    assert.match(code, /^[A-Z0-9]+$/);
+    assert.equal(code.length, ROOM_CODE_LENGTH);
+    codes.add(code);
+  }
+  assert.ok(codes.size > 190, "codes must not repeat in a small sample");
+});
+
+test("a started game arms a turn deadline that only expires on time", () => {
+  const game = makeStartedGame();
+  assert.equal(typeof game.turnDeadline, "number");
+  assert.equal(isTurnExpired(game, game.turnDeadline - 1), false);
+  assert.equal(isTurnExpired(game, game.turnDeadline + 1), true);
+  assert.equal(forceAdvanceTurn(game, game.turnDeadline - 1), null, "no timeout before the deadline");
+});
+
+test("a timed out turn drops the pending decision and moves on", () => {
+  const game = createGame("TIMEOUT1", "Alice", "event-host", "acc-a", { maxPlayers: 2 });
+  addPlayer(game, "Bob", "event-host", "acc-b");
+  setPlayerReady(game, game.players[1].id, true);
+  startGame(game, game.hostId);
+
+  const alice = game.players[0];
+  alice.pendingOpportunityChoice = true;
+
+  const result = forceAdvanceTurn(game, game.turnDeadline + 1);
+
+  assert.equal(result.playerId, alice.id);
+  assert.equal(result.missedTurns, 1);
+  assert.equal(alice.pendingOpportunityChoice, undefined, "stale decision is cleared");
+  assert.equal(game.players[game.currentPlayerIndex].id, game.players[1].id, "turn moved on");
+  assert.ok(Number.isFinite(game.turnDeadline), "next player gets a fresh clock");
+});
+
+test("a player who keeps timing out is skipped instead of blocking the table", () => {
+  const game = createGame("TIMEOUT2", "Alice", "event-host", "acc-a", { maxPlayers: 2 });
+  addPlayer(game, "Bob", "event-host", "acc-b");
+  setPlayerReady(game, game.players[1].id, true);
+  startGame(game, game.hostId);
+  const [alice, bob] = game.players;
+
+  for (let i = 0; i < MISSED_TURNS_LIMIT; i += 1) {
+    while (game.players[game.currentPlayerIndex].id !== alice.id) {
+      forceAdvanceTurn(game, game.turnDeadline + 1);
+    }
+    forceAdvanceTurn(game, game.turnDeadline + 1);
+  }
+
+  assert.equal(alice.abandoned, true);
+  assert.equal(alice.missedTurns, MISSED_TURNS_LIMIT);
+
+  // Bob now holds the table alone and must never hand the turn back to Alice.
+  for (let i = 0; i < 5; i += 1) {
+    assert.equal(game.players[game.currentPlayerIndex].id, bob.id);
+    forceAdvanceTurn(game, game.turnDeadline + 1);
+    if (game.status !== "playing") break;
+  }
+});
+
+test("acting on your turn clears the AFK strike", () => {
+  const game = makeStartedGame();
+  const player = game.players[0];
+  player.missedTurns = 2;
+
+  takeTurn(game, player.id);
+
+  assert.equal(player.missedTurns, 0);
+  assert.equal(player.abandoned, false);
+});
+
+test("a table where everyone walked away finishes instead of hanging", () => {
+  const game = createGame("TIMEOUT3", "Alice", "event-host", "acc-a", { maxPlayers: 2 });
+  addPlayer(game, "Bob", "event-host", "acc-b");
+  setPlayerReady(game, game.players[1].id, true);
+  startGame(game, game.hostId);
+
+  game.players.forEach((player) => { player.abandoned = true; });
+  forceAdvanceTurn(game, game.turnDeadline + 1);
+
+  assert.equal(game.status, "finished");
+  assert.equal(game.finishReason, "abandoned");
+  assert.equal(game.turnDeadline, null, "the clock stops with the game");
+  assert.ok(game.players.some((player) => player.id === game.winnerId));
 });

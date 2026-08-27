@@ -26,6 +26,7 @@
 - Обслуживание проектных активов, чистый поток проектов и рыночные предложения на продажу проектов.
 - Долговые guardrails: автоликвидация актива, реструктуризация и банкротство при глубоком минусе.
 - Чат комнаты и real-time обновление через WebSocket с heartbeat, reconnect и HTTP-восстановлением состояния.
+- Таймер хода: если игрок не успел походить, ход передаётся дальше; после трёх пропусков игрок выбывает из очереди.
 - Профиль игрока, публичный профиль, история партий и статистика.
 - Сохранение аккаунтов, сессий, комнат и истории в Postgres.
 - Единый серверный источник правил для поля и профессий (`/api/rules`).
@@ -76,7 +77,9 @@ LOG_LEVEL=debug
 LOG_FORMAT=pretty
 ```
 
-В dev-режиме ссылки подтверждения email и сброса пароля возвращаются в ответе API, чтобы их можно было тестировать без SMTP-провайдера. Для production нужно подключить отправку email и выставить `EMAIL_DEV_MODE=false`.
+В dev-режиме ссылки подтверждения email и сброса пароля возвращаются в ответе API, чтобы их можно было тестировать без SMTP-провайдера.
+
+Отправки писем пока нет ни в каком виде. В production (`EMAIL_DEV_MODE=false`) сервер честно отвечает `503` на запрос сброса пароля, а интерфейс скрывает эту форму, вместо того чтобы делать вид, что письмо отправлено. Точка расширения — константа `EMAIL_ENABLED` в `backend/server.js`.
 
 ```bash
 npm start
@@ -121,7 +124,13 @@ npm run simulate -- --games=80 --players=4 --seed=42 --length=quick --victory=cl
 
 ## Production
 
-Минимальный production-контур подготовлен под Docker и Render:
+Развёртывание на своём VPS (app + Postgres + Caddy с автоматическим HTTPS) описано в `docs/VPS.md`:
+
+```bash
+docker compose -f docker-compose.prod.yml --env-file .env.production up -d --build
+```
+
+Минимальный production-контур также подготовлен под Docker и Render:
 
 - `Dockerfile` запускает Node.js сервер в `NODE_ENV=production`.
 - `render.yaml` описывает web service, managed Postgres и healthcheck `/api/health`.
@@ -133,14 +142,16 @@ npm run simulate -- --games=80 --players=4 --seed=42 --length=quick --victory=cl
 ```env
 NODE_ENV=production
 DATABASE_URL=postgres://user:password@host:5432/database
-DATABASE_SSL=true
 PUBLIC_ORIGIN=https://your-domain.example
 CORS_ORIGINS=https://your-domain.example
 SESSION_COOKIE_SECURE=true
+TRUST_PROXY=true
 EMAIL_DEV_MODE=false
 LOG_LEVEL=info
 LOG_FORMAT=json
 ```
+
+`TRUST_PROXY` обязателен за reverse proxy и должен быть `false`, если приложение смотрит в интернет напрямую. При `false` заголовок `X-Forwarded-For` игнорируется: иначе любой клиент выдавал бы себе отдельную корзину rate limit и брутфорс пароля не ограничивался бы ничем.
 
 В production сервер требует `DATABASE_URL`, выставляет `Secure` для session cookie, добавляет базовые security headers, проверяет origin для HTTP/WebSocket, пишет структурные JSON-логи и корректно закрывает HTTP, WebSocket и пул Postgres при `SIGTERM`/`SIGINT`.
 
@@ -187,5 +198,6 @@ npm run db:restore -- backups/cashflow-online-YYYY-MM-DD.dump
 - `docs/MVP.md` - текущая граница продукта и ближайший план развития.
 - `docs/PRODUCT_READINESS_AUDIT.md` - аудит готовности проекта до полноценного production-продукта.
 - `docs/PRODUCTION.md` - production runbook, deploy checklist и backup policy.
+- `docs/VPS.md` - развёртывание на собственном VPS через Docker Compose и Caddy.
 - `docs/RULES.md` - текущие реализованные правила игры в текстовом виде.
 - `docs/TESTING.md` - стратегия тестирования и запуск integration suite.

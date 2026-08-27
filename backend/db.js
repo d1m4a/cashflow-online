@@ -12,8 +12,23 @@ if (!DATABASE_URL) {
 
 const pool = new Pool({
   connectionString: DATABASE_URL,
-  ssl: process.env.DATABASE_SSL === "true" ? { rejectUnauthorized: false } : undefined
+  ssl: buildSslOptions()
 });
+
+// rejectUnauthorized:false is TLS without authentication - it stops passive
+// sniffing but not an active man in the middle. It now needs an explicit opt-in.
+function buildSslOptions() {
+  if (process.env.DATABASE_SSL !== "true") {
+    return undefined;
+  }
+  if (process.env.DATABASE_SSL_INSECURE === "true") {
+    logger.warn("Postgres TLS certificate verification is disabled", {
+      hint: "Set DATABASE_SSL_INSECURE=false once the server certificate is trusted."
+    });
+    return { rejectUnauthorized: false };
+  }
+  return { rejectUnauthorized: true };
+}
 
 async function initDb() {
   await pool.query(`
@@ -152,21 +167,55 @@ async function deleteUserAuthTokens(userId, kind) {
   await pool.query("DELETE FROM auth_tokens WHERE user_id = $1 AND kind = $2", [userId, kind]);
 }
 
+const ROOM_ACTIVE_WINDOW_MS = Number(process.env.ROOM_ACTIVE_WINDOW_MS || 30 * 24 * 60 * 60 * 1000);
+const ROOM_LOAD_LIMIT = Number(process.env.ROOM_LOAD_LIMIT || 500);
+const SESSION_SWEEP_GRACE_MS = Number(process.env.SESSION_SWEEP_GRACE_MS || 24 * 60 * 60 * 1000);
+
+// Archived and long-idle rooms stay in Postgres but are no longer resident in
+// process memory: loading every room ever created did not survive growth.
 async function loadRooms() {
-  const result = await pool.query("SELECT state FROM rooms ORDER BY updated_at DESC");
+  const result = await pool.query(
+    `SELECT state
+     FROM rooms
+     WHERE archived_at IS NULL
+       AND updated_at > $1
+     ORDER BY updated_at DESC
+     LIMIT $2`,
+    [Date.now() - ROOM_ACTIVE_WINDOW_MS, ROOM_LOAD_LIMIT]
+  );
   return result.rows.map((row) => row.state);
+}
+
+async function cleanupExpired(now = Date.now()) {
+  const sessions = await pool.query(
+    `DELETE FROM sessions
+     WHERE (expires_at IS NOT NULL AND expires_at < $1)
+        OR (revoked_at IS NOT NULL AND revoked_at < $2)`,
+    [now, now - SESSION_SWEEP_GRACE_MS]
+  );
+  const tokens = await pool.query(
+    `DELETE FROM auth_tokens
+     WHERE expires_at < $1
+        OR (used_at IS NOT NULL AND used_at < $2)`,
+    [now, now - SESSION_SWEEP_GRACE_MS]
+  );
+  return {
+    sessions: sessions.rowCount || 0,
+    authTokens: tokens.rowCount || 0
+  };
 }
 
 async function saveRoom(game) {
   await pool.query(
-    `INSERT INTO rooms (room_code, status, host_player_id, state, created_at, updated_at, result_recorded_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7)
+    `INSERT INTO rooms (room_code, status, host_player_id, state, created_at, updated_at, result_recorded_at, archived_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
      ON CONFLICT (room_code) DO UPDATE SET
        status = EXCLUDED.status,
        host_player_id = EXCLUDED.host_player_id,
        state = EXCLUDED.state,
        updated_at = EXCLUDED.updated_at,
-       result_recorded_at = EXCLUDED.result_recorded_at`,
+       result_recorded_at = EXCLUDED.result_recorded_at,
+       archived_at = EXCLUDED.archived_at`,
     [
       game.roomCode,
       game.status,
@@ -174,7 +223,8 @@ async function saveRoom(game) {
       game,
       game.createdAt,
       game.updatedAt,
-      game.resultRecordedAt || null
+      game.resultRecordedAt || null,
+      game.archivedAt || null
     ]
   );
 }
@@ -444,6 +494,7 @@ module.exports = {
   markAuthTokenUsed,
   deleteUserAuthTokens,
   loadRooms,
+  cleanupExpired,
   saveRoom,
   saveRooms,
   addHistoryRecords,
