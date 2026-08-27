@@ -1,0 +1,66 @@
+# Production stack for a single VPS: app + Postgres + Caddy (automatic HTTPS).
+# Usage: docker compose -f docker-compose.prod.yml --env-file .env.production up -d
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-cashflow_online}
+      POSTGRES_USER: ${POSTGRES_USER:-cashflow}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    # Deliberately not published: only the app container reaches the database.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-cashflow} -d ${POSTGRES_DB:-cashflow_online}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DATABASE_URL: postgres://${POSTGRES_USER:-cashflow}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-cashflow_online}
+      # Postgres is on the private compose network, so there is no TLS to verify.
+      DATABASE_SSL: "false"
+      # Required: Caddy terminates TLS, so the real client IP arrives in a header.
+      TRUST_PROXY: "true"
+      PUBLIC_ORIGIN: https://${DOMAIN:?DOMAIN is required}
+      CORS_ORIGINS: https://${DOMAIN}
+      SESSION_COOKIE_SECURE: "true"
+      EMAIL_DEV_MODE: "false"
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      LOG_FORMAT: json
+    # Deliberately not published: Caddy is the only way in.
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      - app
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN}
+      ACME_EMAIL: ${ACME_EMAIL:?ACME_EMAIL is required for Let's Encrypt}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
+volumes:
+  postgres-data:
+  caddy-data:
+  caddy-config:

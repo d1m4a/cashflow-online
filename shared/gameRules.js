@@ -1,9 +1,21 @@
+const crypto = require("crypto");
+
 const BOARD_SIZE = 18;
 const PROJECT_BOARD_SIZE = 12;
 const PROJECT_INCOME_GOAL = 6200;
 const PROJECT_PORTFOLIO_GOAL = 3;
 const REPUTATION_GOAL = 5;
 const RESERVE_MONTHS_GOAL = 2;
+const SERVER_LOG_LIMIT = 120;
+const SERVER_DEBUG_LOG_LIMIT = 100;
+const CLIENT_LOG_LIMIT = 50;
+const CLIENT_DEBUG_LOG_LIMIT = 30;
+const CLIENT_CHAT_LIMIT = 80;
+const SNAPSHOT_LIMIT = 60;
+const SNAPSHOT_TURN_INTERVAL = 3;
+const ROOM_CODE_LENGTH = 8;
+const TURN_TIME_LIMIT_MS = 90_000;
+const MISSED_TURNS_LIMIT = 3;
 const GAME_LENGTHS = {
   quick: { title: "Быстрая", maxTurns: 36 },
   standard: { title: "Стандартная", maxTurns: 72 },
@@ -509,6 +521,8 @@ function createPlayer(id, name, professionId, accountId = null) {
     assets: [],
     liabilities: profession.liabilities.map((item) => ({ ...item, id: makeId() })),
     skippedTurns: 0,
+    missedTurns: 0,
+    abandoned: false,
     lastRoll: null,
     ready: false
   };
@@ -558,6 +572,20 @@ function ensureRoomShape(game) {
   if (!Array.isArray(game.historySnapshots)) {
     game.historySnapshots = [];
   }
+  if (!Number.isFinite(game.settings.turnTimeLimitMs)) {
+    game.settings.turnTimeLimitMs = TURN_TIME_LIMIT_MS;
+  }
+  if (typeof game.turnDeadline === "undefined") {
+    game.turnDeadline = null;
+  }
+  for (const player of game.players || []) {
+    if (!Number.isFinite(player.missedTurns)) {
+      player.missedTurns = 0;
+    }
+    if (typeof player.abandoned !== "boolean") {
+      player.abandoned = false;
+    }
+  }
 }
 
 function normalizeGameSettings(options = {}) {
@@ -569,10 +597,15 @@ function normalizeGameSettings(options = {}) {
   const maxTurns = Number.isFinite(explicitMaxTurns)
     ? Math.min(180, Math.max(1, Math.floor(explicitMaxTurns)))
     : GAME_LENGTHS[lengthKey].maxTurns;
+  const explicitTurnTime = Number(options.turnTimeLimitMs);
+  const turnTimeLimitMs = Number.isFinite(explicitTurnTime)
+    ? Math.min(600_000, Math.max(15_000, Math.floor(explicitTurnTime)))
+    : TURN_TIME_LIMIT_MS;
   return {
     gameLength: lengthKey,
     victoryMode,
-    maxTurns
+    maxTurns,
+    turnTimeLimitMs
   };
 }
 
@@ -594,6 +627,7 @@ function createGame(roomCode, hostName, professionId, hostAccountId = null, opti
     turnCount: 0,
     round: 1,
     winnerId: null,
+    turnDeadline: null,
     log: [`Комната ${roomCode} создана.`],
     debugLog: [],
     historySnapshots: [],
@@ -764,8 +798,11 @@ function startGame(game, hostId) {
   game.round = 1;
   game.players.forEach((player) => {
     player.ready = false;
+    player.missedTurns = 0;
+    player.abandoned = false;
   });
   game.historySnapshots = [];
+  armTurnDeadline(game);
   game.log.unshift("Игра началась.");
   recordDebug(game, "game.start", { hostId, players: game.players.map((player) => player.id), settings: game.settings });
   captureHistorySnapshot(game, "start");
@@ -785,6 +822,9 @@ function restartGame(game, hostId) {
   delete game.finishReason;
   delete game.resultRecordedAt;
   game.historySnapshots = [];
+  game.turnDeadline = null;
+  game.log = [];
+  game.debugLog = [];
   game.log.unshift(previousWinner ? `Новая партия создана. Прошлый победитель: ${previousWinner.name}.` : "Новая партия создана.");
   recordDebug(game, "game.restart", { hostId, previousWinnerId: previousWinner?.id || null });
   touch(game);
@@ -836,6 +876,7 @@ function takeTurn(game, playerId) {
     return { kind: "skip", player };
   }
 
+  player.missedTurns = 0;
   const roll = rollDie();
   player.lastRoll = roll;
   const event = player.track === "project-league"
@@ -845,6 +886,9 @@ function takeTurn(game, playerId) {
 
   if (!game.winnerId && !hasPendingDecision(player)) {
     advanceTurn(game);
+  } else if (game.status === "playing") {
+    // A pending decision gets its own window instead of eating the roll window.
+    armTurnDeadline(game);
   }
   touch(game);
   return event;
@@ -1265,13 +1309,84 @@ function hasPendingDecision(player) {
 
 function advanceTurn(game) {
   ensureRoomShape(game);
-  game.currentPlayerIndex = (game.currentPlayerIndex + 1) % game.players.length;
   game.turnCount += 1;
   game.round = Math.floor(game.turnCount / Math.max(1, game.players.length)) + 1;
+
+  // Walk past seats whose player stopped responding, otherwise the AFK sweep
+  // would just keep timing out the same empty chair forever.
+  let nextIndex = (game.currentPlayerIndex + 1) % game.players.length;
+  for (let step = 0; step < game.players.length; step += 1) {
+    if (!game.players[nextIndex].abandoned) {
+      break;
+    }
+    nextIndex = (nextIndex + 1) % game.players.length;
+  }
+  game.currentPlayerIndex = nextIndex;
+
+  if (game.players.every((player) => player.abandoned)) {
+    finishAbandonedGame(game);
+    return;
+  }
+
   checkTurnLimit(game);
   if (game.status !== "finished") {
+    armTurnDeadline(game);
     captureHistorySnapshot(game, "turn");
+  } else {
+    game.turnDeadline = null;
   }
+}
+
+function armTurnDeadline(game) {
+  const limit = Number(game.settings?.turnTimeLimitMs) || TURN_TIME_LIMIT_MS;
+  game.turnDeadline = Date.now() + limit;
+}
+
+function isTurnExpired(game, now = Date.now()) {
+  return game.status === "playing"
+    && Number.isFinite(game.turnDeadline)
+    && game.turnDeadline <= now;
+}
+
+// Called by the server sweep when the active player let the clock run out.
+function forceAdvanceTurn(game, now = Date.now()) {
+  ensureRoomShape(game);
+  if (game.status !== "playing" || !isTurnExpired(game, now)) {
+    return null;
+  }
+  const player = currentPlayer(game);
+  if (!player) {
+    return null;
+  }
+
+  delete player.pendingOpportunity;
+  delete player.pendingOpportunityChoice;
+  delete player.pendingMarketOffer;
+  delete player.pendingProjectDeal;
+  delete player.pendingFinancialStress;
+
+  player.missedTurns = (player.missedTurns || 0) + 1;
+  player.lastRoll = 0;
+  game.log.unshift(`${player.name} не успел походить: ход передан дальше.`);
+  recordDebug(game, "turn.timeout", { playerId: player.id, missedTurns: player.missedTurns });
+
+  if (player.missedTurns >= MISSED_TURNS_LIMIT) {
+    player.abandoned = true;
+    game.log.unshift(`${player.name} выбывает из партии после ${MISSED_TURNS_LIMIT} пропущенных ходов.`);
+    recordDebug(game, "turn.abandoned", { playerId: player.id });
+  }
+
+  advanceTurn(game);
+  touch(game);
+  return { playerId: player.id, missedTurns: player.missedTurns, abandoned: player.abandoned };
+}
+
+function finishAbandonedGame(game) {
+  const winner = [...game.players].sort((a, b) => playerNetWorth(b) - playerNetWorth(a))[0];
+  finishGame(game, winner?.id || null, "abandoned");
+  game.turnDeadline = null;
+  game.log.unshift("Партия завершена: все игроки покинули стол.");
+  recordDebug(game, "victory.abandoned", { playerId: winner?.id || null });
 }
 
 function checkProgress(game, player) {
@@ -1464,6 +1579,7 @@ function finishGame(game, winnerId, reason) {
   game.status = "finished";
   game.winnerId = winnerId;
   game.finishReason = reason;
+  game.turnDeadline = null;
   captureHistorySnapshot(game, "finish");
 }
 
@@ -1475,6 +1591,9 @@ function playerNetWorth(player) {
 
 function captureHistorySnapshot(game, kind = "turn") {
   ensureRoomShape(game);
+  if (kind === "turn" && game.historySnapshots.length > 0 && (game.turnCount % SNAPSHOT_TURN_INTERVAL) !== 0) {
+    return;
+  }
   const snapshot = {
     kind,
     turnCount: game.turnCount || 0,
@@ -1484,21 +1603,16 @@ function captureHistorySnapshot(game, kind = "turn") {
     createdAt: Date.now(),
     players: game.players.map((player) => ({
       id: player.id,
-      name: player.name,
-      professionId: player.professionId,
-      profession: player.profession,
-      track: player.track || "money-yard",
       netWorth: playerNetWorth(player),
       cash: player.cash,
       passiveIncome: player.passiveIncome,
       projectIncome: player.projectIncome || 0,
       projectAssets: projectAssetCount(player),
-      reputation: player.reputation || 0,
       bankruptcyCount: player.bankruptcyCount || 0
     }))
   };
   game.historySnapshots.push(snapshot);
-  game.historySnapshots = game.historySnapshots.slice(-160);
+  game.historySnapshots = game.historySnapshots.slice(-SNAPSHOT_LIMIT);
 }
 
 function validateGameState(game) {
@@ -1546,10 +1660,27 @@ function serializeGame(game) {
     game.hostId = game.players[0].id;
   }
   return {
-    ...game,
+    roomCode: game.roomCode,
+    title: game.title,
+    privacy: game.privacy,
+    maxPlayers: game.maxPlayers,
+    settings: game.settings,
+    archivedAt: game.archivedAt,
+    status: game.status,
+    hostId: game.hostId,
+    spectators: game.spectators,
+    currentPlayerIndex: game.currentPlayerIndex,
+    turnCount: game.turnCount,
+    round: game.round,
+    winnerId: game.winnerId,
+    finishReason: game.finishReason || null,
+    turnDeadline: game.turnDeadline || null,
+    createdAt: game.createdAt,
+    updatedAt: game.updatedAt,
     currentPlayerId: currentPlayer(game)?.id || null,
-    chat: game.chat.slice(-80),
-    debugLog: game.debugLog.slice(-120),
+    log: game.log.slice(0, CLIENT_LOG_LIMIT),
+    chat: game.chat.slice(-CLIENT_CHAT_LIMIT),
+    debugLog: game.debugLog.slice(-CLIENT_DEBUG_LOG_LIMIT),
     professions: PROFESSIONS.map((profession) => ({
       id: profession.id,
       title: profession.title,
@@ -1648,7 +1779,13 @@ function projectReadiness(player) {
 }
 
 function makeRoomCode() {
-  return Math.random().toString(36).slice(2, 7).toUpperCase();
+  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  const bytes = crypto.randomBytes(ROOM_CODE_LENGTH);
+  let code = "";
+  for (let index = 0; index < ROOM_CODE_LENGTH; index += 1) {
+    code += alphabet[bytes[index] % alphabet.length];
+  }
+  return code;
 }
 
 function makeId() {
@@ -1669,6 +1806,9 @@ function money(value) {
 
 function touch(game) {
   game.updatedAt = Date.now();
+  if (Array.isArray(game.log) && game.log.length > SERVER_LOG_LIMIT) {
+    game.log = game.log.slice(0, SERVER_LOG_LIMIT);
+  }
 }
 
 function recordDebug(game, type, payload = {}) {
@@ -1681,10 +1821,15 @@ function recordDebug(game, type, payload = {}) {
     round: game.round || 1,
     createdAt: Date.now()
   });
-  game.debugLog = game.debugLog.slice(-300);
+  game.debugLog = game.debugLog.slice(-SERVER_DEBUG_LOG_LIMIT);
 }
 
 module.exports = {
+  ROOM_CODE_LENGTH,
+  TURN_TIME_LIMIT_MS,
+  MISSED_TURNS_LIMIT,
+  forceAdvanceTurn,
+  isTurnExpired,
   CELLS,
   PROFESSIONS,
   createGame,

@@ -29,6 +29,8 @@ const {
   acceptMarketOffer,
   declineMarketOffer,
   confirmFinancialStress,
+  forceAdvanceTurn,
+  isTurnExpired,
   addChatMessage,
   serializeGame,
   serializeRules,
@@ -40,10 +42,14 @@ const ROOT = path.resolve(__dirname, "..");
 const FRONTEND_DIR = path.join(ROOT, "frontend");
 const IS_PRODUCTION = process.env.NODE_ENV === "production";
 const TRUSTED_ORIGINS = parseTrustedOrigins(process.env.CORS_ORIGINS || process.env.PUBLIC_ORIGIN || "");
+const TRUST_PROXY = process.env.TRUST_PROXY === "true";
 const rooms = new Map();
 const roomSockets = new Map();
 const authAttempts = new Map();
 const WS_HEARTBEAT_MS = Number(process.env.WS_HEARTBEAT_MS || 30_000);
+const MAINTENANCE_INTERVAL_MS = Number(process.env.MAINTENANCE_INTERVAL_MS || 10_000);
+const CLEANUP_INTERVAL_MS = Number(process.env.CLEANUP_INTERVAL_MS || 60 * 60 * 1000);
+let lastCleanupAt = 0;
 const AUTH_RATE_WINDOW_MS = Number(process.env.AUTH_RATE_WINDOW_MS || 60_000);
 const AUTH_RATE_MAX = Number(process.env.AUTH_RATE_MAX || 12);
 const SESSION_MAX_AGE_MS = Number(process.env.SESSION_MAX_AGE_MS || 30 * 24 * 60 * 60 * 1000);
@@ -51,6 +57,8 @@ const SESSION_IDLE_MS = Number(process.env.SESSION_IDLE_MS || 7 * 24 * 60 * 60 *
 const EMAIL_TOKEN_TTL_MS = Number(process.env.EMAIL_TOKEN_TTL_MS || 24 * 60 * 60 * 1000);
 const PASSWORD_RESET_TTL_MS = Number(process.env.PASSWORD_RESET_TTL_MS || 60 * 60 * 1000);
 const EMAIL_DEV_MODE = process.env.EMAIL_DEV_MODE !== "false" && !IS_PRODUCTION;
+const EMAIL_ENABLED = false;
+const EMAIL_DISABLED_MESSAGE = "Отправка писем ещё не подключена. Обратитесь к администратору.";
 let isShuttingDown = false;
 
 const server = http.createServer(async (req, res) => {
@@ -138,9 +146,73 @@ const heartbeatTimer = setInterval(() => {
   }
 }, WS_HEARTBEAT_MS);
 
+const maintenanceTimer = setInterval(() => {
+  runMaintenance().catch((error) => logger.error("Maintenance tick failed", { error }));
+}, MAINTENANCE_INTERVAL_MS);
+
 wsServer.on("close", () => {
   clearInterval(heartbeatTimer);
 });
+
+// One sweep owns everything time-based: AFK turns, rate-limit buckets, memory
+// eviction and the periodic database cleanup.
+async function runMaintenance() {
+  const now = Date.now();
+  pruneRateLimitBuckets(now);
+  await sweepExpiredTurns(now);
+  evictArchivedRooms();
+
+  if (now - lastCleanupAt >= CLEANUP_INTERVAL_MS) {
+    lastCleanupAt = now;
+    try {
+      const removed = await db.cleanupExpired(now);
+      if (removed.sessions > 0 || removed.authTokens > 0) {
+        logger.info("Expired records removed", removed);
+      }
+    } catch (error) {
+      logger.error("Expired record cleanup failed", { error });
+    }
+  }
+}
+
+async function sweepExpiredTurns(now) {
+  for (const game of rooms.values()) {
+    if (game.archivedAt || !isTurnExpired(game, now)) {
+      continue;
+    }
+    const result = forceAdvanceTurn(game, now);
+    if (!result) {
+      continue;
+    }
+    logger.info("Turn timed out", {
+      roomCode: game.roomCode,
+      playerId: result.playerId,
+      missedTurns: result.missedTurns,
+      abandoned: result.abandoned
+    });
+    try {
+      await persistGame(game);
+    } catch (error) {
+      logger.error("Failed to persist timed out turn", { error, roomCode: game.roomCode });
+    }
+    broadcastRoom(game, "turn");
+  }
+}
+
+// Archived rooms stay in Postgres but must not pin memory forever.
+function evictArchivedRooms() {
+  for (const [roomCode, game] of rooms) {
+    if (!game.archivedAt) {
+      continue;
+    }
+    const sockets = roomSockets.get(roomCode);
+    if (sockets && sockets.size > 0) {
+      continue;
+    }
+    rooms.delete(roomCode);
+    logger.debug("Archived room evicted from memory", { roomCode });
+  }
+}
 
 if (require.main === module) {
   startServer().catch((error) => {
@@ -213,6 +285,7 @@ async function stopServer() {
   });
   wsServer.close();
   clearInterval(heartbeatTimer);
+  clearInterval(maintenanceTimer);
   await db.closeDb();
 }
 
@@ -267,7 +340,7 @@ async function handleApi(req, res, url) {
     return;
   }
 
-  const match = url.pathname.match(/^\/api\/rooms\/([A-Z0-9]{5})(?:\/([a-z-]+))?$/);
+  const match = url.pathname.match(/^\/api\/rooms\/([A-Z0-9]{5,12})(?:\/([a-z-]+))?$/);
   if (!match) {
     sendJson(res, 404, { error: "Маршрут не найден." });
     return;
@@ -528,6 +601,15 @@ async function handleApi(req, res, url) {
 
     sendJson(res, 404, { error: "Действие не найдено." });
   } catch (error) {
+    if (isDatabaseError(error)) {
+      logger.error("Room action failed on database", {
+        error,
+        roomCode,
+        action
+      });
+      sendJson(res, 503, { error: "База данных временно недоступна." });
+      return;
+    }
     sendJson(res, 400, { error: error.message });
   }
 }
@@ -556,7 +638,10 @@ async function handleAuthApi(req, res, url) {
 
   if (req.method === "GET" && url.pathname === "/api/me") {
     const user = await currentUser(req);
-    sendJson(res, 200, { user: user ? await serializeUser(user) : null });
+    sendJson(res, 200, {
+      user: user ? await serializeUser(user) : null,
+      emailEnabled: EMAIL_ENABLED || EMAIL_DEV_MODE
+    });
     return;
   }
 
@@ -572,15 +657,23 @@ async function handleAuthApi(req, res, url) {
     const updatedAt = Date.now();
     user.name = name;
     user.updatedAt = updatedAt;
+    // Only rooms the user actually plays in change; rewriting every room in the
+    // database for a rename was O(all rooms) per profile edit.
+    const touchedRooms = [];
     for (const room of rooms.values()) {
+      let changed = false;
       for (const player of room.players) {
         if (player.accountId === user.id) {
           player.name = name;
+          changed = true;
         }
+      }
+      if (changed) {
+        touchedRooms.push(room);
       }
     }
     await db.updateUserName(user.id, name, updatedAt);
-    await db.saveRooms([...rooms.values()]);
+    await db.saveRooms(touchedRooms);
     broadcastRoomsForUser(user.id);
     sendJson(res, 200, { user: await serializeUser(user) });
     return;
@@ -614,6 +707,10 @@ async function handleAuthApi(req, res, url) {
   if (req.method === "POST" && url.pathname === "/api/auth/resend-verification") {
     const user = await requireUser(req, res);
     if (!user) return;
+    if (!EMAIL_ENABLED && !EMAIL_DEV_MODE) {
+      sendJson(res, 503, { error: EMAIL_DISABLED_MESSAGE, reason: "email-not-configured" });
+      return;
+    }
     if (user.emailVerifiedAt) {
       sendJson(res, 200, { ok: true, alreadyVerified: true });
       return;
@@ -701,6 +798,10 @@ async function handleAuthApi(req, res, url) {
   }
 
   if (req.method === "POST" && url.pathname === "/api/auth/request-password-reset") {
+    if (!EMAIL_ENABLED && !EMAIL_DEV_MODE) {
+      sendJson(res, 503, { error: EMAIL_DISABLED_MESSAGE, reason: "email-not-configured" });
+      return;
+    }
     const body = await readJson(req);
     const email = normalizeEmail(body.email);
     const user = email ? await db.findUserByEmail(email) : null;
@@ -859,7 +960,7 @@ function serveStatic(req, res, url) {
   const pathname = url.pathname === "/" ? "/index.html" : decodeURIComponent(url.pathname);
   const filePath = path.normalize(path.join(FRONTEND_DIR, pathname));
 
-  if (!filePath.startsWith(FRONTEND_DIR)) {
+  if (filePath !== FRONTEND_DIR && !filePath.startsWith(FRONTEND_DIR + path.sep)) {
     sendText(res, 403, "Forbidden");
     return;
   }
@@ -1024,9 +1125,9 @@ async function consumeAuthToken(kind, rawToken) {
 
 function devTokenPayload(req, apiPath, token) {
   if (!EMAIL_DEV_MODE) {
-    return { sent: true };
+    return { sent: false, reason: "email-not-configured" };
   }
-  const origin = `${req.headers["x-forwarded-proto"] || "http"}://${req.headers.host}`;
+  const origin = requestPublicOrigin(req) || `http://${req.headers.host}`;
   return {
     sent: false,
     token: token.token,
@@ -1136,8 +1237,15 @@ async function recordFinishedGame(game) {
       reputation: player.reputation || 0
     });
   }
+  // Marking before the write would lose the result forever if the insert fails:
+  // the guard at the top of this function would skip every later attempt.
   game.resultRecordedAt = finishedAt;
-  await db.addHistoryRecords(game, records);
+  try {
+    await db.addHistoryRecords(game, records);
+  } catch (error) {
+    game.resultRecordedAt = null;
+    throw error;
+  }
 }
 
 function playerNetWorth(player) {
@@ -1306,8 +1414,10 @@ function isRequestOriginAllowed(req) {
 }
 
 function requestPublicOrigin(req) {
-  const proto = String(req.headers["x-forwarded-proto"] || (req.socket.encrypted ? "https" : "http")).split(",")[0].trim();
-  const host = String(req.headers["x-forwarded-host"] || req.headers.host || "").split(",")[0].trim();
+  const forwardedProto = TRUST_PROXY ? req.headers["x-forwarded-proto"] : null;
+  const forwardedHost = TRUST_PROXY ? req.headers["x-forwarded-host"] : null;
+  const proto = String(forwardedProto || (req.socket.encrypted ? "https" : "http")).split(",")[0].trim();
+  const host = String(forwardedHost || req.headers.host || "").split(",")[0].trim();
   return host ? `${proto}://${host}` : "";
 }
 
@@ -1370,6 +1480,14 @@ function clearSessionCookie(res) {
   res.setHeader("Set-Cookie", `meshok_session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${secure}`);
 }
 
+function pruneRateLimitBuckets(now = Date.now()) {
+  for (const [key, bucket] of authAttempts) {
+    if (bucket.resetAt <= now) {
+      authAttempts.delete(key);
+    }
+  }
+}
+
 function checkRateLimit(req, res, scope) {
   const now = Date.now();
   const key = `${scope}:${clientIp(req)}`;
@@ -1398,9 +1516,17 @@ function checkRateLimit(req, res, scope) {
 }
 
 function clientIp(req) {
-  const forwarded = req.headers["x-forwarded-for"];
-  if (typeof forwarded === "string" && forwarded.trim()) {
-    return forwarded.split(",")[0].trim();
+  // Without TRUST_PROXY the header is attacker-controlled: honouring it would
+  // hand every request its own rate-limit bucket.
+  if (TRUST_PROXY) {
+    const forwarded = req.headers["x-forwarded-for"];
+    if (typeof forwarded === "string" && forwarded.trim()) {
+      // The nearest trusted proxy appends the real peer, so the last hop wins.
+      const hops = forwarded.split(",").map((hop) => hop.trim()).filter(Boolean);
+      if (hops.length > 0) {
+        return hops[hops.length - 1];
+      }
+    }
   }
   return req.socket.remoteAddress || "unknown";
 }
@@ -1486,6 +1612,10 @@ module.exports = {
   startServer,
   stopServer,
   _test: {
-    recordFinishedGame
+    recordFinishedGame,
+    runMaintenance,
+    sweepExpiredTurns,
+    evictArchivedRooms,
+    rooms
   }
 };

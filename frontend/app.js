@@ -14,6 +14,8 @@ const state = {
   socket: null,
   reconnectTimer: null,
   heartbeatTimer: null,
+  turnClockTimer: null,
+  emailEnabled: true,
   reconnectAttempt: 0
 };
 
@@ -491,6 +493,7 @@ async function init() {
     renderProfessionOptions();
     renderBoard();
     const session = await api("/api/me");
+    applyEmailAvailability(session.emailEnabled);
     await setUser(session.user);
 
     if (!state.user) {
@@ -583,7 +586,24 @@ async function setUser(user) {
 
 async function refreshMe() {
   const session = await api("/api/me");
+  applyEmailAvailability(session.emailEnabled);
   await setUser(session.user);
+}
+
+// Showing a password reset form that cannot deliver anything just strands the
+// user, so the whole flow is hidden until a mail transport exists.
+function applyEmailAvailability(enabled) {
+  state.emailEnabled = enabled !== false;
+  const resetRequestForm = document.querySelector("#resetRequestForm");
+  const resetPasswordForm = document.querySelector("#resetPasswordForm");
+  for (const node of [resetRequestForm, resetPasswordForm]) {
+    if (node) {
+      node.classList.toggle("hidden", !state.emailEnabled);
+    }
+  }
+  if (resendVerificationButton) {
+    resendVerificationButton.classList.toggle("hidden", !state.emailEnabled);
+  }
 }
 
 async function setGame(game, presence = state.presence) {
@@ -922,7 +942,7 @@ function renderProfile() {
   emailStatus.textContent = state.user.emailVerified
     ? `Email подтверждён${state.user.emailVerifiedAt ? `: ${formatDate(state.user.emailVerifiedAt)}` : "."}`
     : "Email пока не подтверждён.";
-  resendVerificationButton.disabled = Boolean(state.user.emailVerified);
+  resendVerificationButton.disabled = Boolean(state.user.emailVerified) || !state.emailEnabled;
   profileStats.innerHTML = `
     <span>Игр<strong>${stats.games || 0}</strong></span>
     <span>Побед<strong>${stats.wins || 0}</strong></span>
@@ -2081,12 +2101,46 @@ function updateStatusBar(status) {
   statusKicker.textContent = status.kicker || "Статус";
   statusTitle.textContent = status.title || "Комната";
   statusText.textContent = status.text || "";
+  renderStatusMeta();
+}
+
+function renderStatusMeta() {
   const disconnected = disconnectedPlayersText(state.game);
+  const turnClock = turnClockText(state.game);
   statusMeta.innerHTML = [
     state.game ? `<span>${state.game.players.length}/${state.game.maxPlayers || 4} игроков</span>` : "",
     state.game?.round ? `<span>Раунд ${state.game.round}</span>` : "",
+    turnClock ? `<span class="${turnClock.urgent ? "danger-text" : ""}">${escapeHtml(turnClock.text)}</span>` : "",
     disconnected ? `<span class="danger-text">${escapeHtml(disconnected)}</span>` : ""
   ].filter(Boolean).join("");
+  scheduleTurnClock();
+}
+
+function turnClockText(game) {
+  if (!game || game.status !== "playing" || !game.turnDeadline) {
+    return null;
+  }
+  const remainingMs = game.turnDeadline - Date.now();
+  if (remainingMs <= 0) {
+    return { text: "Время хода истекло", urgent: true };
+  }
+  const seconds = Math.ceil(remainingMs / 1000);
+  return {
+    text: `На ход: ${seconds} с`,
+    urgent: seconds <= 15
+  };
+}
+
+// The deadline is a server timestamp, so the label has to re-render locally
+// between state updates or it would sit frozen until the next broadcast.
+function scheduleTurnClock() {
+  clearTimeout(state.turnClockTimer);
+  state.turnClockTimer = null;
+  if (!state.game || state.game.status !== "playing" || !state.game.turnDeadline) {
+    return;
+  }
+  // Only the countdown label is repainted each second, not the whole control panel.
+  state.turnClockTimer = window.setTimeout(() => renderStatusMeta(), 1000);
 }
 
 function waitingText(game, notReadyPlayers) {
@@ -2224,7 +2278,7 @@ function startPolling() {
   clearInterval(state.pollTimer);
   state.pollTimer = setInterval(() => {
     refreshGame().catch(() => {});
-  }, 1500);
+  }, 5000);
 }
 
 function stopPolling() {
